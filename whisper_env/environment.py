@@ -4,6 +4,16 @@ from gymnasium import spaces
 from .config import EnvironmentConfig
 
 def cyclic_encode(x, period):
+    """
+    Encodes a periodic variable (like month) into its sine and cosine components.
+
+    Args:
+        x (float): The value to encode.
+        period (float): The period of the variable.
+
+    Returns:
+        np.ndarray: Array containing [sin(angle), cos(angle)].
+    """
     angle = 2 * np.pi * x / period
     return np.array(
         [np.sin(angle), np.cos(angle)],
@@ -11,8 +21,22 @@ def cyclic_encode(x, period):
     )
 
 class OffshoreMaintenanceEnv(gym.Env):
+    """
+    Gymnasium environment for optimizing offshore wind farm maintenance strategies.
+
+    This environment simulates turbine health degradation, energy production,
+    and maintenance interventions over time. Actions correspond to intervention
+    decisions (0: no intervention, 1: intervention) for each turbine.
+    """
     metadata = {"render_modes": []}
+
     def __init__(self, config: EnvironmentConfig):
+        """
+        Initializes the OffshoreMaintenanceEnv.
+
+        Args:
+            config (EnvironmentConfig): Comprehensive configuration object for the environment.
+        """
         super().__init__()
 
         self.config = config
@@ -83,6 +107,9 @@ class OffshoreMaintenanceEnv(gym.Env):
 
     @property
     def max_steps(self):
+        """
+        Returns the maximum number of decision steps in an episode.
+        """
         return int(
             np.ceil(
                 self.config.max_simulation_years * 12
@@ -91,6 +118,9 @@ class OffshoreMaintenanceEnv(gym.Env):
         )
 
     def _get_obs(self):
+        """
+        Constructs the observation dictionary for the current state.
+        """
         month = cyclic_encode(self.current_month - 1, period=12)
         protection_remaining_norm = (self.protection_remaining / self.config.max_protection_duration)
         return {
@@ -104,6 +134,9 @@ class OffshoreMaintenanceEnv(gym.Env):
         }
 
     def _get_info(self):
+        """
+        Constructs the info dictionary with supplementary environment state.
+        """
         return {
             "damage_multiplier": self.damage_multiplier.copy(),
             "last_action": self.last_action,
@@ -115,6 +148,16 @@ class OffshoreMaintenanceEnv(gym.Env):
         seed=None,
         options=None
     ):
+        """
+        Resets the environment to the initial state.
+
+        Args:
+            seed (Optional[int]): Random seed for the environment.
+            options (Optional[dict]): Dictionary of options (e.g., randomize_maintenance_params).
+
+        Returns:
+            tuple[dict, dict]: The initial observation and info dictionaries.
+        """
         super().reset(seed=seed)
 
         if seed is not None:
@@ -194,6 +237,15 @@ class OffshoreMaintenanceEnv(gym.Env):
         return observation, info
 
     def step(self, action):
+        """
+        Executes a simulation step based on the provided action.
+
+        Args:
+            action (np.ndarray): Array of actions (0 or 1) for each turbine.
+
+        Returns:
+            tuple: Contains observation, reward, terminated flag, truncated flag, and info.
+        """
         action = np.asarray(action, dtype=np.int32)
 
         if action.shape != (self.n_turbines,):

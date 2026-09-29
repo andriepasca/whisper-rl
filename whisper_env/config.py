@@ -17,6 +17,9 @@ def _default_wind_direction():
 
 @dataclass
 class WindClimateConfig:
+    """
+    Configuration for the ambient wind climate.
+    """
     monthly_weibull: dict = field(default_factory=_default_monthly_weibull)
     wind_direction: np.ndarray = field(default_factory=_default_wind_direction)
     wind_direction_probability: Optional[np.ndarray] = None
@@ -29,11 +32,17 @@ def _get_default_layout():
 
 @dataclass
 class LayoutConfig:
+    """
+    Configuration for the wind farm layout coordinates.
+    """
     x: np.ndarray = field(default_factory=lambda: np.array(_get_default_layout().x))
     y: np.ndarray = field(default_factory=lambda: np.array(_get_default_layout().y))
 
 @dataclass
 class TurbineConfig:
+    """
+    Configuration for the wind turbine model parameters.
+    """
     name: str = "NREL 5-MW"
     rotor_diameter: float = 126.0
     hub_height: float = 90.0
@@ -55,6 +64,9 @@ def _default_turbulence_model():
 
 @dataclass
 class WakeSolverConfig:
+    """
+    Configuration for the WakeSolver, integrating layout, turbine, and py_wake models.
+    """
     layout: LayoutConfig = field(default_factory=LayoutConfig)
     turbine: TurbineConfig = field(default_factory=TurbineConfig)
     wake_deficit_model: Any = field(default_factory=_default_wake_deficit_model)
@@ -63,6 +75,9 @@ class WakeSolverConfig:
 
 @dataclass
 class DamageSolverConfig:
+    """
+    Configuration for the DamageSolver response surfaces and fatigue calculations.
+    """
     csv_path: str = "/content/drive/MyDrive/1openfast_data/response_surface_df_200.csv"
     u_column: str = "u"
     ti_column: str = "ti"
@@ -75,6 +90,9 @@ class DamageSolverConfig:
 
 @dataclass
 class MaintenanceType:
+    """
+    Defines a specific type of maintenance intervention and its properties.
+    """
     name: str
     threshold: float
 
@@ -103,6 +121,9 @@ def _default_maintenance_types():
 
 @dataclass
 class MaintenanceConfig:
+    """
+    Configuration grouping available maintenance types.
+    """
     maintenance_types: tuple[MaintenanceType, ...] = field(default_factory=_default_maintenance_types)
 
     @property
@@ -191,6 +212,9 @@ def _default_logger():
 
 @dataclass(frozen=True)
 class EnvironmentConfig:
+    """
+    Master configuration for the OffshoreMaintenanceEnv simulation environment.
+    """
     wind_climate: Any = field(default_factory=_default_wind_climate)
     wake_solver: Any = field(default_factory=_default_wake_solver)
     damage_solver: Any = field(default_factory=_default_damage_solver)
@@ -214,6 +238,15 @@ class EnvironmentConfig:
     seed: int = 42
 
     def get_initial_hi(self, n_turbines: int) -> np.ndarray:
+        """
+        Retrieves the initial Health Index (HI) array for the turbines.
+
+        Args:
+            n_turbines (int): Number of turbines in the farm.
+
+        Returns:
+            np.ndarray: An array of initial Health Indices.
+        """
         if np.isscalar(self.initial_hi):
             return np.full(
                 n_turbines,

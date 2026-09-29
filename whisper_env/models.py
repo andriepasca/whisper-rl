@@ -7,8 +7,21 @@ from .config import WindClimateConfig, RewardConfig
 from .maintenance import MaintenanceResult
 
 class WindClimate:
+    """
+    Models the stochastic ambient wind climate for the offshore environment.
+
+    This class handles the probability distributions of wind speed and direction,
+    providing methods for both random sampling and deterministic stratified sampling.
+    """
 
     def __init__(self, config: WindClimateConfig):
+        """
+        Initializes the WindClimate model with the given configuration.
+
+        Args:
+            config (WindClimateConfig): Configuration containing Weibull parameters and
+                                        wind direction probabilities.
+        """
         self.config = config
 
         # --------------------------------------------------
@@ -59,6 +72,17 @@ class WindClimate:
             )
 
     def sample(self, month, rng):
+        """
+        Stochastically samples ambient wind speed and direction for a given month.
+
+        Args:
+            month (int): The current month (1-12) used to select Weibull parameters.
+            rng (np.random.Generator): Random number generator instance.
+
+        Returns:
+            tuple[float, float]: A tuple containing the sampled ambient wind speed
+                                 and wind direction.
+        """
 
         # --------------------------------------------------
         # Ambient wind speed
@@ -90,9 +114,22 @@ class WindClimate:
 
     def iter_stratified(self, month: int, n_u: int):
         """
-        Yields deterministic strata combinations of
-        (ambient_u, ambient_wd, probability) for joint-probability
-        Stratified Sampling.
+        Yields deterministic strata combinations of (ambient_u, ambient_wd, probability)
+        for joint-probability Stratified Sampling.
+
+        **Scientific Constraint:** This method enforces deterministic joint-probability
+        Stratified Sampling. This approach is strictly required to compute the expected
+        fatigue damage and power accurately by integrating over discrete probability strata.
+        It effectively eliminates Jensen's Inequality bias that would arise from simply
+        aggregating non-linear fatigue damage over random samples (e.g., using rng.choice).
+
+        Args:
+            month (int): The current month (1-12) used to select Weibull parameters.
+            n_u (int): The number of wind speed strata to discretize the CDF into.
+
+        Yields:
+            tuple[float, float, float]: The ambient wind speed, ambient wind direction,
+                                        and the joint probability of this stratum.
         """
         weibull = self.config.monthly_weibull[month]
         k = weibull["k"]
@@ -139,6 +176,9 @@ class TransitionResult:
 class TransitionModel:
     """
     Turbine health transition model.
+
+    This model computes the new health state of a turbine given its current state,
+    accumulated fatigue damage, and any applied maintenance interventions.
     """
 
     def solve(
@@ -149,6 +189,19 @@ class TransitionModel:
         protection_remaining: int,
         maintenance: Optional[MaintenanceResult] = None,
     ) -> TransitionResult:
+        """
+        Computes the next state of the turbine health index.
+
+        Args:
+            hi (float): Current Health Index (0.0 to 1.0).
+            delta_damage (float): Accumulated fatigue damage in the current time step.
+            damage_multiplier (float): Current multiplier applied to damage.
+            protection_remaining (int): Remaining months of protection.
+            maintenance (Optional[MaintenanceResult]): Applied maintenance intervention.
+
+        Returns:
+            TransitionResult: The resulting health state of the turbine.
+        """
 
         # ----------------------------------------------------------
         # Convert Health Index to degradation
@@ -213,6 +266,10 @@ class TransitionModel:
 
 @dataclass
 class ElectricityPriceModel:
+    """
+    Models the stochastic electricity price for energy revenue calculations.
+    """
+
     def __init__(
         self,
         monthly_mean=(90, 85, 78, 70, 62, 55, 50, 52, 60, 72, 82, 92),
@@ -222,6 +279,16 @@ class ElectricityPriceModel:
         self.monthly_std = np.asarray(monthly_std, dtype=float)
 
     def sample(self, month, rng):
+        """
+        Samples the electricity price for a given month.
+
+        Args:
+            month (int): The current month (1-12).
+            rng (np.random.Generator): Random number generator instance.
+
+        Returns:
+            float: The sampled electricity price.
+        """
         mu = self.monthly_mean[month - 1]
         sigma = self.monthly_std[month - 1]
 
@@ -231,13 +298,19 @@ class ElectricityPriceModel:
 
 class SpatialGroupingObjective:
     """
-    Spatial grouping objective based on the layout of selected
-    maintenance turbines.
+    Spatial grouping objective based on the layout of selected maintenance turbines.
 
-    Lower values indicate a more spatially compact maintenance group.
+    Lower values indicate a more spatially compact maintenance group, which is
+    often desirable to minimize vessel routing and logistical costs.
     """
 
     def __init__(self, layout_config=None):
+        """
+        Initializes the spatial grouping objective.
+
+        Args:
+            layout_config (Optional[LayoutConfig]): The wind farm layout configuration.
+        """
         if layout_config is None:
             from .config import LayoutConfig
             layout_config = LayoutConfig()
@@ -260,6 +333,16 @@ class SpatialGroupingObjective:
             self.max_distance = 1.0
 
     def solve(self, maintenance_indices):
+        """
+        Calculates the spatial grouping metric for the selected turbines.
+
+        Args:
+            maintenance_indices (List[int]): Indices of turbines undergoing maintenance.
+
+        Returns:
+            float: The mean pairwise distance between selected turbines, or 0.0 if
+                   less than 2 turbines are selected.
+        """
         indices = np.asarray(
             maintenance_indices,
             dtype=int,
@@ -305,20 +388,34 @@ class RewardResult:
 
 class RewardModel:
     """
-    Converts multi-objective maintenance metrics into
-    an RL-compatible scalar reward.
+    Converts multi-objective maintenance metrics into an RL-compatible scalar reward.
     """
 
     def __init__(
         self,
         config: RewardConfig,
     ):
+        """
+        Initializes the RewardModel.
+
+        Args:
+            config (RewardConfig): Configuration containing reward objectives and weights.
+        """
         self.config = config
 
     def solve(
         self,
         metrics: dict[str, float],
     ) -> RewardResult:
+        """
+        Computes the scalar reward from the given metrics.
+
+        Args:
+            metrics (dict[str, float]): Dictionary of evaluated metrics (e.g., damage burden).
+
+        Returns:
+            RewardResult: A dataclass containing the final scalar reward and individual objectives.
+        """
 
         reward = 0.0
         objectives = {}
@@ -363,12 +460,13 @@ class RewardModel:
 @dataclass
 class LoggingModel:
     """
-    Centralized simulation logger.
+    Centralized simulation logger for tracking state transitions and decisions.
     """
 
     history: List[Dict[str, Any]] = field(default_factory=list)
 
     def reset(self):
+        """Clears the simulation history."""
         self.history.clear()
 
     def log_state(
@@ -388,6 +486,9 @@ class LoggingModel:
         repair_count,
         replacement_count
     ):
+        """
+        Logs the state of the environment at a given time step.
+        """
 
         self.history.append(
             {
@@ -443,6 +544,9 @@ class LoggingModel:
         action,
         protection_remaining,
     ):
+        """
+        Logs the decision and resulting metrics at an intervention step.
+        """
         if len(self.history) == 0:
             return
 
@@ -468,6 +572,9 @@ class LoggingModel:
             row[k] = float(v)
 
     def dataframe(self):
+        """
+        Returns the logged history as a pandas DataFrame.
+        """
         return pd.DataFrame(self.history)
 
 class RandomScatteredLayout:
@@ -485,6 +592,17 @@ class RandomScatteredLayout:
         seed=42,
         max_attempts=1_000_000
     ):
+        """
+        Initializes the random scattered layout generator.
+
+        Args:
+            D (float): Rotor diameter in meters.
+            n_turbines (int): Number of turbines to place.
+            min_spacing_D (float): Minimum spacing between turbines in rotor diameters.
+            farm_scale (float): Scaling factor for the overall farm area.
+            seed (int): Random seed for reproducibility.
+            max_attempts (int): Maximum number of placement attempts.
+        """
 
         self.D = D
         self.n_turbines = n_turbines
@@ -551,6 +669,9 @@ class RandomScatteredLayout:
         return coordinates
 
     def _calculate_info(self):
+        """
+        Calculates geometric and spatial info about the generated layout.
+        """
         pairwise_distances = []
         for i in range(self.n_turbines):
             for j in range(i + 1, self.n_turbines):
@@ -580,6 +701,9 @@ class RandomScatteredLayout:
         }
 
     def print_info(self):
+        """
+        Prints information about the generated layout.
+        """
         info = self.info
         print(f"Number of turbines : {info['number_of_turbines']}")
         print(f"Rotor diameter     : {info['rotor_diameter_m']:.1f} m")
@@ -591,6 +715,12 @@ class RandomScatteredLayout:
         print(f"Random seed        : {info['seed']}")
 
     def plot(self, turbine_labels=True):
+        """
+        Plots the generated layout.
+
+        Args:
+            turbine_labels (bool): Whether to label the turbines.
+        """
         fig, ax = plt.subplots(figsize=(8, 8))
         ax.scatter(self.x, self.y, s=100)
         if turbine_labels:

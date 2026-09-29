@@ -21,8 +21,17 @@ class MaintenanceResult:
 
 
 class MaintenancePolicy:
+    """
+    Evaluates and applies the configured maintenance strategy based on turbine health.
+    """
 
     def __init__(self, config: MaintenanceConfig):
+        """
+        Initializes the MaintenancePolicy.
+
+        Args:
+            config (MaintenanceConfig): The maintenance configuration.
+        """
         self.config = config
 
     def solve(
@@ -31,6 +40,17 @@ class MaintenancePolicy:
         action: int,
         protection_remaining: int,
     ) -> MaintenanceResult:
+        """
+        Determines the outcome of a maintenance decision.
+
+        Args:
+            hi (float): The current health index of the turbine.
+            action (int): The chosen action (0 for no intervention, 1 for intervention).
+            protection_remaining (int): Remaining months of protection from previous maintenance.
+
+        Returns:
+            MaintenanceResult: The result of the applied or rejected maintenance.
+        """
 
         if action not in (0, 1):
             raise ValueError(
