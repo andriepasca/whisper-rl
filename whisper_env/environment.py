@@ -126,18 +126,27 @@ class OffshoreMaintenanceEnv(gym.Env):
         )
 
         if randomize_maintenance_params:
-            for maintenance in self.maintenance_policy.config.maintenance_types:
-                if maintenance.name.lower() == "repair":
-                    maintenance.threshold = self.rng.uniform(0.75, 0.90)
-                    maintenance.damage_multiplier = self.rng.uniform(0.5, 0.9)
-                    maintenance.duration_months = int(self.rng.integers(3, 13))
+            for m in self.maintenance_policy.config.maintenance_types:
+                if m.name.lower() == "repair":
+                    m.threshold = self.rng.uniform(0.75, 0.90)
+                    m.damage_multiplier = self.rng.uniform(0.5, 0.9)
+                    m.duration_months = int(self.rng.integers(3, 13))
                     break
 
-        self.repair_params = {
-            "threshold": maintenance.threshold,
-            "multiplier": maintenance.damage_multiplier,
-            "duration": maintenance.duration_months,
-        }
+        maintenance = next((m for m in self.maintenance_policy.config.maintenance_types if m.name.lower() == "repair"), None)
+
+        if maintenance is not None:
+            self.repair_params = {
+                "threshold": maintenance.threshold,
+                "multiplier": maintenance.damage_multiplier,
+                "duration": maintenance.duration_months,
+            }
+        else:
+            self.repair_params = {
+                "threshold": 0.0,
+                "multiplier": 1.0,
+                "duration": 0,
+            }
 
         self.current_year = 1
         self.current_month = 1
