@@ -1,0 +1,329 @@
+import numpy as np
+import pandas as pd
+import xarray as xr
+from dataclasses import dataclass
+from scipy.interpolate import RegularGridInterpolator
+
+from py_wake.site import XRSite
+from py_wake.wind_turbines import WindTurbine
+from py_wake.wind_turbines.power_ct_functions import PowerCtTabular
+from py_wake.wind_farm_models import PropagateDownwind
+
+from .config import WakeSolverConfig, DamageSolverConfig
+
+class WakeSolver:
+    def __init__(self, config: WakeSolverConfig):
+        self.config = config
+        self.layout = config.layout
+        self.layout_x = config.layout.x
+        self.layout_y = config.layout.y
+        self.n_turbines = len(self.layout_x)
+
+        self.turbine_config = config.turbine
+        self.turbine_df = pd.read_csv(self.turbine_config.csv_path)
+
+        self.wake_deficit_model = config.wake_deficit_model
+        self.superposition_model = config.superposition_model
+        self.turbulence_model = config.turbulence_model
+
+        self.wind_turbines = None
+        self.wind_farm_model = None
+        self.site = None
+
+        self._build_turbine()
+        self._build_site()
+        self._build_model()
+
+    @staticmethod
+    def ambient_ti(ws, z=90.0):
+        # ============================================================
+        # Ambient turbulence intensity
+        #
+        # Extended ISO turbulence-intensity relationship
+        # (Jeans, 2024), evaluated using the ENOW neutral
+        # offshore coefficient set:
+        # Reference: https://doi.org/10.5194/wes-9-2001-2024
+        #
+        # ============================================================
+
+        # ENOW neutral offshore coefficient set
+        a1 = 0.025
+        a2 = 0.0450
+        a3 = 0.030
+
+        # Reference quantities
+        U_ref = 10.0   # [m/s]
+        z_ref = 10.0   # [m]
+
+        ws = np.asarray(ws, dtype=float)
+
+        # Normalized wind speed
+        U_norm = ws / U_ref
+
+        # Ambient turbulence intensity
+        ti = (
+            a1 * U_norm
+            + a2
+            + a3 * U_norm**(-1)
+        ) * (z / z_ref)**(-0.22)
+
+        return ti
+
+    def _build_turbine(self):
+        turbine_df = self.turbine_df
+
+        power_ct = PowerCtTabular(
+            ws=turbine_df.iloc[:, 0].to_numpy(dtype=float),
+            power=turbine_df.iloc[:, 1].to_numpy(dtype=float),
+            power_unit=self.turbine_config.power_unit,
+            ct=turbine_df.iloc[:, 4].to_numpy(dtype=float)
+        )
+
+        self.wind_turbines = WindTurbine(
+            name=self.turbine_config.name,
+            diameter=self.turbine_config.rotor_diameter,
+            hub_height=self.turbine_config.hub_height,
+            powerCtFunction=power_ct
+        )
+
+    def _build_site(self):
+
+        # Turbine hub height [m]
+        z_hub = self.turbine_config.hub_height
+
+        # Wind-speed grid [m/s]
+        ws = np.arange(3.0, 26.1, 0.1)
+
+        # Ambient turbulence intensity
+        ti = self.ambient_ti(ws, z=z_hub)
+
+        # One wind-direction sector with probability = 1
+        wd = np.array([0.0])
+        p_wd = np.array([1.0])
+
+        self.site = XRSite(
+            xr.Dataset(
+                data_vars={
+                    'P': ('wd', p_wd),
+                    'TI': ('ws', ti),
+                },
+                coords={
+                    'wd': wd,
+                    'ws': ws,
+                }
+            ),
+            interp_method='linear'
+        )
+
+    def _build_model(self):
+        kwargs = {}
+
+        if self.superposition_model is not None:
+            kwargs["superpositionModel"] = self.superposition_model
+
+        if self.turbulence_model is not None:
+            kwargs["turbulenceModel"] = self.turbulence_model
+
+        self.wind_farm_model = PropagateDownwind(
+            site=self.site,
+            windTurbines=self.wind_turbines,
+            wake_deficitModel=self.wake_deficit_model,
+            **kwargs
+        )
+
+    def solve(
+        self,
+        ambient_u,
+        ambient_wd,
+    ):
+
+        simulation = self.wind_farm_model(
+            x=self.layout_x,
+            y=self.layout_y,
+            ws=np.atleast_1d(ambient_u),
+            wd=np.atleast_1d(ambient_wd)
+        )
+
+        u_eff = (
+            simulation.WS_eff
+            .isel(
+                wt=range(self.n_turbines),
+                wd=0,
+                ws=0
+            )
+            .values
+            .astype("float32")
+        )
+
+        ti_eff = (
+            simulation.TI_eff
+            .isel(
+                wt=range(self.n_turbines),
+                wd=0,
+                ws=0
+            )
+            .values
+            .astype("float32")
+        )
+
+        power_kw = (
+            simulation.Power
+            .isel(
+                wt=range(self.n_turbines),
+                wd=0,
+                ws=0
+            )
+            .values
+            .astype("float32")
+        )
+
+        power = power_kw / 1e6  # MW
+
+        return {
+            "u_eff": u_eff,
+            "ti_eff": ti_eff,
+            "power": power,
+        }
+
+    def solve_complete(self, ambient_u, ambient_wd):
+        simulation = self.wind_farm_model(
+            x=self.layout_x,
+            y=self.layout_y,
+            ws=np.atleast_1d(ambient_u),
+            wd=np.atleast_1d(ambient_wd)
+        )
+
+        u_eff = simulation.WS_eff.isel(wt=range(self.n_turbines), wd=0, ws=0).values.astype("float32")
+        ti_eff = simulation.TI_eff.isel(wt=range(self.n_turbines), wd=0, ws=0).values.astype("float32")
+        power_kw = simulation.Power.isel(wt=range(self.n_turbines), wd=0, ws=0).values.astype("float32")
+
+        ambient_u = float(ambient_u)
+        ambient_wd = float(ambient_wd)
+        ambient_ti = float(self.ambient_ti(
+            np.array([ambient_u]),
+            z=self.turbine_config.hub_height
+        )[0])
+
+        velocity_ratio = (u_eff / ambient_u).astype("float32")
+        velocity_deficit = (1.0 - velocity_ratio).astype("float32")
+        ti_added = (ti_eff - ambient_ti).astype("float32")
+        ti_ratio = (ti_eff / ambient_ti).astype("float32")
+
+        return {
+            "ambient_u": ambient_u,
+            "ambient_ti": ambient_ti,
+            "wind_direction": ambient_wd,
+            "u_eff": u_eff,
+            "ti_eff": ti_eff,
+            "velocity_ratio": velocity_ratio,
+            "velocity_deficit": velocity_deficit,
+            "ti_added": ti_added,
+            "ti_ratio": ti_ratio,
+            "power_kw": power_kw,
+            "power": power_kw / 1e6,
+            "x": np.asarray(self.layout_x, dtype="float32"),
+            "y": np.asarray(self.layout_y, dtype="float32"),
+        }
+
+    def flow_map(
+        self,
+        ambient_u,
+        ambient_wd
+    ):
+
+        simulation = self.wind_farm_model(
+            x=self.layout_x,
+            y=self.layout_y,
+            ws=ambient_u,
+            wd=ambient_wd
+        )
+
+        return simulation.flow_map()
+
+
+class DamageSolver:
+    def __init__(self, config: DamageSolverConfig):
+        self.config = config
+        self.response_surface_df = pd.read_csv(self.config.csv_path)
+        self.u_grid = np.sort(self.response_surface_df["u"].unique())
+        self.ti_grid = np.sort(self.response_surface_df["ti"].unique())
+        self._build_interpolators()
+
+    def _create_interpolator(self, value_column):
+        surface = (
+            self.response_surface_df
+            .pivot(
+                index=self.config.u_column,
+                columns=self.config.ti_column,
+                values=value_column
+            )
+            .values
+        )
+        return RegularGridInterpolator(
+            (self.u_grid, self.ti_grid),
+            surface,
+            method="linear",
+            bounds_error=False,
+            fill_value=None
+        )
+
+    def _build_interpolators(self):
+        self.interpolators = {
+            "del_flap": self._create_interpolator(self.config.del_flap_column),
+            "del_edge": self._create_interpolator(self.config.del_edge_column),
+        }
+
+    def predict_del(
+        self,
+        u_eff,
+        ti_eff,
+    ):
+        points = np.column_stack((u_eff, ti_eff))
+
+        del_flap = self.interpolators["del_flap"](points).astype(np.float32)
+        del_edge = self.interpolators["del_edge"](points).astype(np.float32)
+
+        return {
+            "del_flap": del_flap,
+            "del_edge": del_edge,
+        }
+
+    def solve(
+        self,
+        u_eff,
+        ti_eff,
+        duration_minutes=10.0
+    ):
+        n_ref = self.config.design_life_years*365*24*60/10 # number of cycles allowed per 10 minutes block
+        del_pred = self.predict_del(u_eff, ti_eff)
+        m = self.config.m_coef
+
+        damage_flap_10min = ((del_pred["del_flap"]/self.config.del_flap_ref)**m)/n_ref
+        damage_edge_10min = ((del_pred["del_edge"]/self.config.del_edge_ref)**m)/n_ref
+        damage_10min = (damage_flap_10min + damage_edge_10min)/2
+
+        scale = duration_minutes / 10.0
+        damage = damage_10min * scale
+        return damage
+
+
+@dataclass
+class EnergyResult:
+    """
+    Energy production result.
+    """
+    energy: float
+
+class EnergySolver:
+    """
+    Convert turbine power into generated energy.
+    """
+    def solve(self, power: float, operating_hours: float) -> EnergyResult:
+        energy = (
+            power
+            * operating_hours
+        )
+
+        return EnergyResult(
+            energy=energy,
+        )
