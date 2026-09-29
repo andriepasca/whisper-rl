@@ -25,6 +25,21 @@ pip install -e .
 
 The package manages dependencies such as `gymnasium`, `py_wake`, `numpy`, `pandas`, and `xarray` through `pyproject.toml`. Note that testing and execution require this local installation.
 
+## Usage
+
+Here is a quick example of how to initiate the environment with the default configuration:
+
+```python
+from whisper_env import EnvironmentConfig, OffshoreMaintenanceEnv
+
+# Initialize with default configuration
+config = EnvironmentConfig()
+env = OffshoreMaintenanceEnv(config)
+
+# Reset the environment to get initial observation and info
+obs, info = env.reset()
+```
+
 ## Architecture & Module Interaction
 
 The following Mermaid diagram visualizes the interaction between the core modules within the `whisper_env` package.
