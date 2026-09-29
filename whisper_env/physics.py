@@ -12,7 +12,21 @@ from py_wake.wind_farm_models import PropagateDownwind
 from .config import WakeSolverConfig, DamageSolverConfig
 
 class WakeSolver:
+    """
+    Solves wind farm wake effects using PyWake.
+
+    This class handles the initialization of the site and turbine models,
+    and calculates the effective wind speeds, turbulence intensities, and power output
+    for a given ambient wind condition.
+    """
+
     def __init__(self, config: WakeSolverConfig):
+        """
+        Initializes the WakeSolver with the given configuration.
+
+        Args:
+            config (WakeSolverConfig): Configuration for layout, turbine, and wake models.
+        """
         self.config = config
         self.layout = config.layout
         self.layout_x = config.layout.x
@@ -36,6 +50,16 @@ class WakeSolver:
 
     @staticmethod
     def ambient_ti(ws, z=90.0):
+        """
+        Calculates the ambient turbulence intensity based on the Extended ISO model.
+
+        Args:
+            ws (np.ndarray): Array of ambient wind speeds in m/s.
+            z (float): Evaluation height (typically hub height) in meters.
+
+        Returns:
+            np.ndarray: Calculated turbulence intensity values.
+        """
         # ============================================================
         # Ambient turbulence intensity
         #
@@ -136,6 +160,17 @@ class WakeSolver:
         ambient_u,
         ambient_wd,
     ):
+        """
+        Calculates effective wind conditions and power for a given ambient condition.
+
+        Args:
+            ambient_u (float): Ambient wind speed in m/s.
+            ambient_wd (float): Ambient wind direction in degrees.
+
+        Returns:
+            dict: Dictionary containing arrays of effective wind speeds (`u_eff`),
+                  effective turbulence intensities (`ti_eff`), and power in MW (`power`).
+        """
 
         simulation = self.wind_farm_model(
             x=self.layout_x,
@@ -186,6 +221,16 @@ class WakeSolver:
         }
 
     def solve_complete(self, ambient_u, ambient_wd):
+        """
+        Calculates a comprehensive set of effective conditions and power data.
+
+        Args:
+            ambient_u (float): Ambient wind speed in m/s.
+            ambient_wd (float): Ambient wind direction in degrees.
+
+        Returns:
+            dict: Detailed simulation results including ratios and added turbulence.
+        """
         simulation = self.wind_farm_model(
             x=self.layout_x,
             y=self.layout_y,
@@ -242,7 +287,17 @@ class WakeSolver:
 
 
 class DamageSolver:
+    """
+    Computes fatigue damage accumulation using structural response surfaces.
+    """
+
     def __init__(self, config: DamageSolverConfig):
+        """
+        Initializes the DamageSolver.
+
+        Args:
+            config (DamageSolverConfig): Configuration containing the CSV path for the response surface and fatigue parameters.
+        """
         self.config = config
         self.response_surface_df = pd.read_csv(self.config.csv_path)
         self.u_grid = np.sort(self.response_surface_df["u"].unique())
@@ -278,6 +333,16 @@ class DamageSolver:
         u_eff,
         ti_eff,
     ):
+        """
+        Predicts Damage Equivalent Loads (DEL) for flap and edge based on the response surface.
+
+        Args:
+            u_eff (np.ndarray): Array of effective wind speeds.
+            ti_eff (np.ndarray): Array of effective turbulence intensities.
+
+        Returns:
+            dict: Dictionary containing arrays of predicted DEL for flap (`del_flap`) and edge (`del_edge`).
+        """
         points = np.column_stack((u_eff, ti_eff))
 
         del_flap = self.interpolators["del_flap"](points).astype(np.float32)
@@ -294,6 +359,17 @@ class DamageSolver:
         ti_eff,
         duration_minutes=10.0
     ):
+        """
+        Calculates the accumulated fatigue damage over a given duration.
+
+        Args:
+            u_eff (np.ndarray): Array of effective wind speeds.
+            ti_eff (np.ndarray): Array of effective turbulence intensities.
+            duration_minutes (float): Time duration for the damage accumulation.
+
+        Returns:
+            np.ndarray: Array of accumulated fatigue damage values.
+        """
         n_ref = self.config.design_life_years*365*24*60/10 # number of cycles allowed per 10 minutes block
         del_pred = self.predict_del(u_eff, ti_eff)
         m = self.config.m_coef
@@ -319,6 +395,16 @@ class EnergySolver:
     Convert turbine power into generated energy.
     """
     def solve(self, power: float, operating_hours: float) -> EnergyResult:
+        """
+        Calculates energy produced given power and operating hours.
+
+        Args:
+            power (float): Farm or turbine power output.
+            operating_hours (float): Number of operating hours.
+
+        Returns:
+            EnergyResult: The resulting energy production.
+        """
         energy = (
             power
             * operating_hours
