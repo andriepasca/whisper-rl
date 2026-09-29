@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "whisper_env"
 version = "0.1.0"
 authors = [
-  { name="Author", email="author@example.com" },
+  { name="AndriePasca", email="andriepasca@gmail.com" },
 ]
 description = "Offshore Maintenance Environment"
 readme = "README.md"
