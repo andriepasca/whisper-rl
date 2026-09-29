@@ -2,36 +2,68 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import Optional, Any
 
+def _default_monthly_weibull():
+    return {
+        1:  {"k": 2.2, "c": 13.0}, 2:  {"k": 2.2, "c": 12.5},
+        3:  {"k": 2.2, "c": 11.5}, 4:  {"k": 2.2, "c": 10.5},
+        5:  {"k": 2.2, "c": 9.5},  6:  {"k": 2.2, "c": 8.5},
+        7:  {"k": 2.2, "c": 8.0},  8:  {"k": 2.2, "c": 8.5},
+        9:  {"k": 2.2, "c": 9.5},  10: {"k": 2.2, "c": 11.0},
+        11: {"k": 2.2, "c": 12.0}, 12: {"k": 2.2, "c": 13.0},
+    }
+
+def _default_wind_direction():
+    return np.arange(0.0, 360.0, 10.0)
+
 @dataclass
 class WindClimateConfig:
-    monthly_weibull: dict
-    wind_direction: np.ndarray
+    monthly_weibull: dict = field(default_factory=_default_monthly_weibull)
+    wind_direction: np.ndarray = field(default_factory=_default_wind_direction)
     wind_direction_probability: Optional[np.ndarray] = None
+
+def _get_default_layout():
+    from .models import RandomScatteredLayout
+    return RandomScatteredLayout(
+        D=126.0, n_turbines=25, min_spacing_D=7.0, farm_scale=1.0, seed=42
+    )
 
 @dataclass
 class LayoutConfig:
-    x: np.ndarray
-    y: np.ndarray
+    x: np.ndarray = field(default_factory=lambda: np.array(_get_default_layout().x))
+    y: np.ndarray = field(default_factory=lambda: np.array(_get_default_layout().y))
 
 @dataclass
 class TurbineConfig:
-    name: str
-    rotor_diameter: float
-    hub_height: float
-    csv_path: str # source from https://github.com/NatLabRockies/turbine-models$0
+    name: str = "NREL 5-MW"
+    rotor_diameter: float = 126.0
+    hub_height: float = 90.0
+    csv_path: str = "/content/drive/MyDrive/1openfast_data/NREL_Reference_5MW_126.csv" # source from https://github.com/NatLabRockies/turbine-models
     power_unit: str = "kW"
+
+def _default_wake_deficit_model():
+    from py_wake.deficit_models import NoWakeDeficit
+    return NoWakeDeficit()
+
+def _default_superposition_model():
+    from py_wake.superposition_models import LinearSum
+    return LinearSum()
+
+def _default_turbulence_model():
+    from py_wake.superposition_models import SqrMaxSum
+    from py_wake.turbulence_models import STF2017TurbulenceModel
+    return STF2017TurbulenceModel(addedTurbulenceSuperpositionModel=SqrMaxSum())
 
 @dataclass
 class WakeSolverConfig:
-    layout: LayoutConfig
-    turbine: TurbineConfig
-    wake_deficit_model: Any
-    superposition_model: Any = None
-    turbulence_model: Any = None
+    layout: LayoutConfig = field(default_factory=LayoutConfig)
+    turbine: TurbineConfig = field(default_factory=TurbineConfig)
+    wake_deficit_model: Any = field(default_factory=_default_wake_deficit_model)
+    superposition_model: Any = field(default_factory=_default_superposition_model)
+    turbulence_model: Any = field(default_factory=_default_turbulence_model)
 
 @dataclass
 class DamageSolverConfig:
-    csv_path: str
+    csv_path: str = "/content/drive/MyDrive/1openfast_data/response_surface_df_200.csv"
     u_column: str = "u"
     ti_column: str = "ti"
     del_flap_column: str = "del_flap"
@@ -58,9 +90,20 @@ class MaintenanceType:
     # Replacement resets degradation to zero.
     is_replacement: bool = False
 
+def _default_maintenance_types():
+    repair = MaintenanceType(
+        name="repair", threshold=0.85, cost=2_000, downtime_hours=8,
+        carbon_emission=200, damage_multiplier=0.45, duration_months=15, is_replacement=False
+    )
+    replacement = MaintenanceType(
+        name="replacement", threshold=0.10, cost=350_000, downtime_hours=168,
+        carbon_emission=5_000, damage_multiplier=1.0, duration_months=1, is_replacement=True
+    )
+    return (repair, replacement)
+
 @dataclass
 class MaintenanceConfig:
-    maintenance_types: tuple[MaintenanceType, ...]
+    maintenance_types: tuple[MaintenanceType, ...] = field(default_factory=_default_maintenance_types)
 
     @property
     def replacement(self) -> MaintenanceType | None:
@@ -83,33 +126,87 @@ class RewardObjective:
     normalize: bool = False
     scale: float = 1.0
 
+def _default_reward_objectives():
+    layout_config = LayoutConfig()
+    x = layout_config.x
+    y = layout_config.y
+    spatial_reference_scale = float(np.max(np.sqrt((x[:, None] - x[None, :])**2 + (y[:, None] - y[None, :])**2)))
+    return {
+        "damage_burden": RewardObjective(
+            weight=0.85, direction="min", normalize=True, scale=25*6,
+        ),
+        "spatial_grouping": RewardObjective(
+            weight=0.15, direction="min", normalize=True, scale=spatial_reference_scale,
+        ),
+    }
+
 @dataclass(frozen=True)
 class RewardConfig:
     """
     Configuration of reward scalarization.
     """
     objectives: dict[str, RewardObjective] = field(
-        default_factory=dict
+        default_factory=_default_reward_objectives
     )
+
+def _default_wind_climate():
+    from .models import WindClimate
+    return WindClimate(WindClimateConfig())
+
+def _default_wake_solver():
+    from .physics import WakeSolver
+    return WakeSolver(WakeSolverConfig())
+
+def _default_damage_solver():
+    from .physics import DamageSolver
+    return DamageSolver(DamageSolverConfig())
+
+def _default_maintenance_policy():
+    from .maintenance import MaintenancePolicy
+    return MaintenancePolicy(MaintenanceConfig())
+
+def _default_transition_model():
+    from .models import TransitionModel
+    return TransitionModel()
+
+def _default_electricity_price_model():
+    from .models import ElectricityPriceModel
+    return ElectricityPriceModel()
+
+def _default_spatial_grouping_objective():
+    from .models import SpatialGroupingObjective
+    return SpatialGroupingObjective(LayoutConfig())
+
+def _default_reward_model():
+    from .models import RewardModel
+    return RewardModel(RewardConfig())
+
+def _default_energy_solver():
+    from .physics import EnergySolver
+    return EnergySolver()
+
+def _default_logger():
+    from .models import LoggingModel
+    return LoggingModel()
 
 @dataclass(frozen=True)
 class EnvironmentConfig:
-    wind_climate: Any
-    wake_solver: Any
-    damage_solver: Any
-    maintenance_policy: Any
-    transition_model: Any
-    electricity_price_model: Any
-    spatial_grouping_objective: Any
-    reward_model: Any
-    energy_solver: Any
-    logger: Any
-    max_protection_duration: int
-    initial_hi: float | np.ndarray
-    wind_time_slices_per_month: int
+    wind_climate: Any = field(default_factory=_default_wind_climate)
+    wake_solver: Any = field(default_factory=_default_wake_solver)
+    damage_solver: Any = field(default_factory=_default_damage_solver)
+    maintenance_policy: Any = field(default_factory=_default_maintenance_policy)
+    transition_model: Any = field(default_factory=_default_transition_model)
+    electricity_price_model: Any = field(default_factory=_default_electricity_price_model)
+    spatial_grouping_objective: Any = field(default_factory=_default_spatial_grouping_objective)
+    reward_model: Any = field(default_factory=_default_reward_model)
+    energy_solver: Any = field(default_factory=_default_energy_solver)
+    logger: Any = field(default_factory=_default_logger)
+    max_protection_duration: int = 15
+    initial_hi: float | np.ndarray = 1.0
+    wind_time_slices_per_month: int = 30
     hours_per_month: float = 730.5
-    decision_interval_months: int = 1
-    max_simulation_years: int = 20
+    decision_interval_months: int = 6
+    max_simulation_years: int = 30
     u_min: float = 0.0
     u_max: float = 30.0
     ti_min: float = 0.03

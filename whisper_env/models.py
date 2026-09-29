@@ -16,11 +16,15 @@ class WindClimate:
         # --------------------------------------------------
         if config.wind_direction_probability is None:
 
-            # Default: uniform synthetic wind rose
-            self.wind_direction_probability = (
-                np.ones(len(config.wind_direction))
-                / len(config.wind_direction)
-            )
+            # von Misses distribution
+            dominant_direction = 270.0
+            kappa = 2.0
+            theta = np.deg2rad(config.wind_direction)
+            mu = np.deg2rad(dominant_direction)
+            wind_direction_probability = np.exp(kappa * np.cos(theta - mu))
+            wind_direction_probability /= wind_direction_probability.sum()
+
+            self.wind_direction_probability = wind_direction_probability
 
         else:
 
@@ -211,8 +215,8 @@ class TransitionModel:
 class ElectricityPriceModel:
     def __init__(
         self,
-        monthly_mean,
-        monthly_std,
+        monthly_mean=(90, 85, 78, 70, 62, 55, 50, 52, 60, 72, 82, 92),
+        monthly_std=(10, 10, 9, 8, 8, 7, 7, 7, 8, 9, 10, 10),
     ):
         self.monthly_mean = np.asarray(monthly_mean, dtype=float)
         self.monthly_std = np.asarray(monthly_std, dtype=float)
@@ -233,7 +237,11 @@ class SpatialGroupingObjective:
     Lower values indicate a more spatially compact maintenance group.
     """
 
-    def __init__(self, layout_config):
+    def __init__(self, layout_config=None):
+        if layout_config is None:
+            from .config import LayoutConfig
+            layout_config = LayoutConfig()
+
         self.x = np.asarray(layout_config.x, dtype=float)
         self.y = np.asarray(layout_config.y, dtype=float)
 
