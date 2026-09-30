@@ -188,16 +188,30 @@ class WakeSolver:
         is_vectorized = len(ambient_u) > 1
 
         if is_vectorized:
-            simulation = self.wind_farm_model(
-                x=self.layout_x,
-                y=self.layout_y,
-                ws=ambient_u,
-                wd=ambient_wd,
-                time=True
-            )
-            u_eff = simulation.WS_eff.values.astype("float32")
-            ti_eff = simulation.TI_eff.values.astype("float32")
-            power_kw = simulation.Power.values.astype("float32")
+            unique_wds = np.unique(ambient_wd)
+            
+            u_eff_out = np.zeros((self.n_turbines, len(ambient_u)), dtype=np.float32)
+            ti_eff_out = np.zeros((self.n_turbines, len(ambient_u)), dtype=np.float32)
+            power_out = np.zeros((self.n_turbines, len(ambient_u)), dtype=np.float32)
+            
+            for wd_val in unique_wds:
+                idx = np.where(ambient_wd == wd_val)[0]
+                ws_subset = ambient_u[idx]
+                
+                sim = self.wind_farm_model(
+                    x=self.layout_x,
+                    y=self.layout_y,
+                    ws=ws_subset,
+                    wd=np.array([wd_val])
+                )
+                
+                u_eff_out[:, idx] = sim.WS_eff.values[:, 0, :].astype(np.float32)
+                ti_eff_out[:, idx] = sim.TI_eff.values[:, 0, :].astype(np.float32)
+                power_out[:, idx] = sim.Power.values[:, 0, :].astype(np.float32)
+
+            u_eff = u_eff_out
+            ti_eff = ti_eff_out
+            power_kw = power_out
         else:
             simulation = self.wind_farm_model(
                 x=self.layout_x,
