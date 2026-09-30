@@ -176,53 +176,38 @@ class WakeSolver:
         Calculates effective wind conditions and power for a given ambient condition.
 
         Args:
-            ambient_u (float): Ambient wind speed in m/s.
-            ambient_wd (float): Ambient wind direction in degrees.
+            ambient_u (float or np.ndarray): Ambient wind speed in m/s.
+            ambient_wd (float or np.ndarray): Ambient wind direction in degrees.
 
         Returns:
             dict: Dictionary containing arrays of effective wind speeds (`u_eff`),
                   effective turbulence intensities (`ti_eff`), and power in MW (`power`).
         """
+        ambient_u = np.atleast_1d(ambient_u)
+        ambient_wd = np.atleast_1d(ambient_wd)
+        is_vectorized = len(ambient_u) > 1
 
-        simulation = self.wind_farm_model(
-            x=self.layout_x,
-            y=self.layout_y,
-            ws=np.atleast_1d(ambient_u),
-            wd=np.atleast_1d(ambient_wd)
-        )
-
-        u_eff = (
-            simulation.WS_eff
-            .isel(
-                wt=range(self.n_turbines),
-                wd=0,
-                ws=0
+        if is_vectorized:
+            simulation = self.wind_farm_model(
+                x=self.layout_x,
+                y=self.layout_y,
+                ws=ambient_u,
+                wd=ambient_wd,
+                time=True
             )
-            .values
-            .astype("float32")
-        )
-
-        ti_eff = (
-            simulation.TI_eff
-            .isel(
-                wt=range(self.n_turbines),
-                wd=0,
-                ws=0
+            u_eff = simulation.WS_eff.values.astype("float32")
+            ti_eff = simulation.TI_eff.values.astype("float32")
+            power_kw = simulation.Power.values.astype("float32")
+        else:
+            simulation = self.wind_farm_model(
+                x=self.layout_x,
+                y=self.layout_y,
+                ws=ambient_u,
+                wd=ambient_wd
             )
-            .values
-            .astype("float32")
-        )
-
-        power_kw = (
-            simulation.Power
-            .isel(
-                wt=range(self.n_turbines),
-                wd=0,
-                ws=0
-            )
-            .values
-            .astype("float32")
-        )
+            u_eff = simulation.WS_eff.isel(wt=range(self.n_turbines), wd=0, ws=0).values.astype("float32")
+            ti_eff = simulation.TI_eff.isel(wt=range(self.n_turbines), wd=0, ws=0).values.astype("float32")
+            power_kw = simulation.Power.isel(wt=range(self.n_turbines), wd=0, ws=0).values.astype("float32")
 
         power = power_kw / 1e6  # MW
 
@@ -371,10 +356,13 @@ class DamageSolver:
         Returns:
             dict: Dictionary containing arrays of predicted DEL for flap (`del_flap`) and edge (`del_edge`).
         """
-        points = np.column_stack((u_eff, ti_eff))
+        orig_shape = np.shape(u_eff)
+        u_flat = np.ravel(u_eff)
+        ti_flat = np.ravel(ti_eff)
+        points = np.column_stack((u_flat, ti_flat))
 
-        del_flap = self.interpolators["del_flap"](points).astype(np.float32)
-        del_edge = self.interpolators["del_edge"](points).astype(np.float32)
+        del_flap = self.interpolators["del_flap"](points).astype(np.float32).reshape(orig_shape)
+        del_edge = self.interpolators["del_edge"](points).astype(np.float32).reshape(orig_shape)
 
         return {
             "del_flap": del_flap,

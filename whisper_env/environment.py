@@ -318,44 +318,53 @@ class OffshoreMaintenanceEnv(gym.Env):
             months_simulated += 1
 
             # Using expected damage/power via stratified sampling (Option B) to avoid Jensen's inequality bias
-            expected_monthly_damage = np.zeros(self.n_turbines)
-            expected_monthly_power = np.zeros(self.n_turbines)
-
             n_slices = self.config.wind_time_slices_per_month
+
+            ambient_u_list = []
+            ambient_wd_list = []
+            p_joint_list = []
 
             for ambient_u, ambient_wd, p_joint in self.wind_climate.iter_stratified(
                 month=self.current_month,
                 n_u=n_slices
             ):
-                # We save one arbitrarily to log the state
-                self.ambient_u = ambient_u
-                self.ambient_wd = ambient_wd
+                ambient_u_list.append(ambient_u)
+                ambient_wd_list.append(ambient_wd)
+                p_joint_list.append(p_joint)
+            
+            ambient_u_arr = np.array(ambient_u_list)
+            ambient_wd_arr = np.array(ambient_wd_list)
+            p_joint_arr = np.array(p_joint_list)
 
-                wake = self.wake_solver.solve(
-                    ambient_u=ambient_u,
-                    ambient_wd=ambient_wd,
-                )
+            # We save one arbitrarily to log the state
+            self.ambient_u = float(ambient_u_arr[-1])
+            self.ambient_wd = float(ambient_wd_arr[-1])
 
-                u_eff = wake["u_eff"]
-                ti_eff = wake["ti_eff"]
-                power = wake["power"]
+            wake = self.wake_solver.solve(
+                ambient_u=ambient_u_arr,
+                ambient_wd=ambient_wd_arr,
+            )
 
-                # Damage rate calculation
-                # damage_10min is the damage occurred during a 10 minutes period
-                damage_10min = self.damage_solver.solve(
-                    u_eff=u_eff,
-                    ti_eff=ti_eff,
-                    duration_minutes=10.0,
-                )
+            u_eff = wake["u_eff"]
+            ti_eff = wake["ti_eff"]
+            power = wake["power"]
 
-                # scale to the full month using expected value integration
-                slice_damage = (damage_10min * duration_minutes / 10.0)
+            # Damage rate calculation
+            # damage_10min is the damage occurred during a 10 minutes period
+            damage_10min = self.damage_solver.solve(
+                u_eff=u_eff,
+                ti_eff=ti_eff,
+                duration_minutes=10.0,
+            )
 
-                expected_monthly_damage += p_joint * slice_damage
-                expected_monthly_power += p_joint * power
+            # scale to the full month using expected value integration
+            slice_damage = (damage_10min * duration_minutes / 10.0)
 
-            self.u_eff = u_eff
-            self.ti_eff = ti_eff
+            expected_monthly_damage = np.sum(slice_damage * p_joint_arr, axis=1)
+            expected_monthly_power = np.sum(power * p_joint_arr, axis=1)
+
+            self.u_eff = u_eff[:, -1]
+            self.ti_eff = ti_eff[:, -1]
             self.power = expected_monthly_power
 
             mean_farm_power += np.sum(self.power)
@@ -395,6 +404,7 @@ class OffshoreMaintenanceEnv(gym.Env):
                 monthly_energy += (
                     self.power[i]
                     * availability
+                    * hours_per_month
                 )
 
             interval_cost += monthly_cost
