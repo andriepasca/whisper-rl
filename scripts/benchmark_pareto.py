@@ -2,39 +2,81 @@ import os
 import csv
 import numpy as np
 from whisper_env import get_default_config, OffshoreMaintenanceEnv
+import gymnasium as gym
+from gymnasium import spaces
+
+class FlattenDictWrapper(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.observation_space = spaces.Dict({
+            "farm_month": env.observation_space["farm"]["month"],
+            "turbines_HI": env.observation_space["turbines"]["HI"],
+            "turbines_protection_remaining": env.observation_space["turbines"]["protection_remaining"]
+        })
+
+    def observation(self, obs):
+        return {
+            "farm_month": obs["farm"]["month"],
+            "turbines_HI": obs["turbines"]["HI"],
+            "turbines_protection_remaining": obs["turbines"]["protection_remaining"]
+        }
 
 class DummyAgent:
     def __init__(self, action_prob=0.0):
         self.action_prob = action_prob
 
     def predict(self, obs, deterministic=True):
-        n_turbines = obs["turbines"]["HI"].shape[0]
-        return (np.random.rand(n_turbines) < self.action_prob).astype(np.int32)
+        if "turbines_HI" in obs:
+            n_turbines = obs["turbines_HI"].shape[0]
+        else:
+            n_turbines = obs["turbines"]["HI"].shape[0]
+        return (np.random.rand(n_turbines) < self.action_prob).astype(np.int32), None
 
 def main():
     print("Starting Pareto benchmark evaluation...")
 
-    agents = [
-        {"model_id": "model_w_0.0", "w_damage": 0.0, "agent": DummyAgent(action_prob=0.0)},
-        {"model_id": "model_w_0.2", "w_damage": 0.2, "agent": DummyAgent(action_prob=0.05)},
-        {"model_id": "model_w_0.5", "w_damage": 0.5, "agent": DummyAgent(action_prob=0.1)},
-        {"model_id": "model_w_0.8", "w_damage": 0.8, "agent": DummyAgent(action_prob=0.2)},
-        {"model_id": "model_w_1.0", "w_damage": 1.0, "agent": DummyAgent(action_prob=1.0)},
-    ]
+    try:
+        from stable_baselines3 import PPO
+        sb3_available = True
+    except ImportError:
+        sb3_available = False
+
+    weights = [0.0, 0.2, 0.5, 0.8, 1.0]
+    dummy_probs = [0.0, 0.05, 0.1, 0.2, 1.0]
+
+    agents = []
+
+    for w, prob in zip(weights, dummy_probs):
+        model_id = f"model_w_{w}"
+        model_path = f"models/ppo_blade_w{w}.zip"
+
+        agent = None
+        if sb3_available and os.path.exists(model_path):
+            print(f"Found trained model for {model_id}, loading...")
+            agent = PPO.load(model_path)
+        else:
+            print(f"Trained model not found for {model_id}, falling back to DummyAgent.")
+            agent = DummyAgent(action_prob=prob)
+
+        agents.append({
+            "model_id": model_id,
+            "w_damage": w,
+            "agent": agent
+        })
 
     results = []
     base_seed = 12345
-
-    # We use full 30-year episode (max_simulation_years=30) but we don't change n_turbines or wind_time_slices_per_month
-    # to evaluate correctly, let's keep defaults but it takes time. Actually, if I use the default config exactly,
-    # the evaluation runs the standard full setup. Since I just tested the script locally with scaled down params,
-    # I'll revert it to proper defaults so it is correct in the PR.
 
     for agent_info in agents:
         print(f"Evaluating {agent_info['model_id']}...")
         config = get_default_config(seed=base_seed)
 
         env = OffshoreMaintenanceEnv(config)
+
+        is_ppo = hasattr(agent_info["agent"], "policy")
+        if is_ppo:
+            env = FlattenDictWrapper(env)
+
         obs, _ = env.reset(seed=base_seed)
 
         total_J_damage = 0.0
@@ -42,11 +84,13 @@ def main():
 
         done = False
         while not done:
-            action = agent_info["agent"].predict(obs)
+            action, _ = agent_info["agent"].predict(obs, deterministic=True)
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
 
-        history_df = env.logger.dataframe()
+        # We must use unwrapped environment for logging property if env is wrapped
+        unwrapped_env = env.unwrapped if is_ppo else env
+        history_df = unwrapped_env.logger.dataframe()
 
         if not history_df.empty:
             decision_events = history_df[history_df["decision_event"] == True]
