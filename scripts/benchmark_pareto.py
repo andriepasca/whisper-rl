@@ -2,7 +2,18 @@ import os
 import csv
 import argparse
 import numpy as np
-from whisper_env import get_default_config, OffshoreMaintenanceEnv
+from whisper_env import (
+    get_default_config,
+    OffshoreMaintenanceEnv,
+    TurbineConfig,
+    DamageSolverConfig,
+    WakeSolverConfig,
+    WakeSolver,
+    DamageSolver
+)
+from py_wake.deficit_models import BastankhahGaussianDeficit
+from py_wake.superposition_models import LinearSum
+from py_wake.turbulence_models import STF2017TurbulenceModel
 import gymnasium as gym
 from gymnasium import spaces
 
@@ -33,7 +44,8 @@ class DummyAgent:
             n_turbines = obs["turbines"]["HI"].shape[0]
         return (np.random.rand(n_turbines) < self.action_prob).astype(np.int32), None
 
-def main(seed):
+def main(args):
+    seed = args.seed
     print(f"Starting Pareto benchmark evaluation with seed {seed}...")
 
     try:
@@ -52,7 +64,6 @@ def main(seed):
         model_path_seeded = f"models/ppo_blade_w{w}_seed{seed}.zip"
         model_path_unseeded = f"models/ppo_blade_w{w}.zip"
 
-        # Check for models/ppo_blade_w{w}_seed{seed}.zip first. If not found, check models/ppo_blade_w{w}.zip. If neither exists, fall back to DummyAgent.
         if sb3_available:
             if os.path.exists(model_path_seeded):
                 print(f"Found trained model for {model_id} (seeded), loading...")
@@ -80,6 +91,36 @@ def main(seed):
         print(f"Evaluating {agent_info['model_id']}...")
         config = get_default_config(seed=base_seed)
 
+        turbine_config = TurbineConfig(
+            name="NREL 5-MW",
+            rotor_diameter=126.0,
+            hub_height=90.0,
+            csv_path=args.turbine_csv,
+            power_unit="kW"
+        )
+
+        damage_solver_config = DamageSolverConfig(
+            csv_path=args.damage_csv,
+            u_column="u",
+            ti_column="ti",
+            del_flap_column="del_flap",
+            del_edge_column="del_edge",
+            m_coef=10.0,
+            del_flap_ref=2803.716141751299,
+            del_edge_ref=5588.786717232858,
+            design_life_years=20
+        )
+
+        wake_config = WakeSolverConfig(
+            layout=config.wake_solver.config.layout,
+            turbine=turbine_config,
+            wake_deficit_model=BastankhahGaussianDeficit(),
+            superposition_model=LinearSum(),
+            turbulence_model=STF2017TurbulenceModel()
+        )
+        config.wake_solver = WakeSolver(wake_config)
+        config.damage_solver = DamageSolver(damage_solver_config)
+
         env = OffshoreMaintenanceEnv(config)
 
         is_ppo = hasattr(agent_info["agent"], "policy")
@@ -97,7 +138,6 @@ def main(seed):
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
 
-        # We must use unwrapped environment for logging property if env is wrapped
         unwrapped_env = env.unwrapped if is_ppo else env
         history_df = unwrapped_env.logger.dataframe()
 
@@ -125,10 +165,10 @@ def main(seed):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Benchmark Pareto agents")
-    # Add CLI argument --seed (type=int, default=42)
     parser.add_argument("--seed", type=int, default=42, help="Random seed for evaluation (default: 42)")
+    parser.add_argument("--turbine-csv", type=str, required=True, help="Path to the turbine power curve data")
+    parser.add_argument("--damage-csv", type=str, required=True, help="Path to the response surface damage data")
 
     args = parser.parse_args()
 
-    # Pass the parsed --seed argument into the main evaluation loop
-    main(seed=args.seed)
+    main(args)
