@@ -1,18 +1,19 @@
-# Whisper Env
+# WHISPER-RL: Wind turbine Health-Index & Spatial Policy Environment for Reinforcement Learning
 
-## Overview
+## Introduction
 
-Whisper Env is a modular Gymnasium environment for Offshore Wind Turbine Blade Maintenance addressing the Green Paradox (balancing structural blade degradation $J_{damage}$ against carbon/spatial vessel logistics $J_{spatial}$).
+WHISPER-RL (Wind turbine Health-Index & Spatial Policy Environment for Reinforcement Learning) is a modular Gymnasium environment for modeling Offshore Wind Turbine Blade Maintenance. The framework focuses on addressing the "Green Paradox", balancing composite blade structural fatigue (Health-Index proxy) against carbon-intensive marine vessel logistics (Spatial Policy).
 
-## Key Scientific Features
+## Key Methodology
 
-- **Deterministic Stratified Sampling:** The simulation strictly uses deterministic joint-probability Stratified Sampling to eliminate Jensen's inequality bias in expected fatigue damage. Random sampling (e.g., `rng.choice`) for fatigue aggregation is strictly prohibited. By integrating over discrete probability strata instead of relying on limited random samples, the simulation ensures mathematical stability and accuracy in accumulated damage and power outputs.
-- **Pluggable Climate Presets:** The environment supports pluggable climate presets (`north_sea`, `us_atlantic`, `taiwan_strait`) for various operating conditions.
-- **Hierarchical RL (HRL):** Weather Oracle hooks support providing isolated statistical weather predictors as observation feature extractors for top-level agents.
+- **Deterministic Stratified Sampling:** The simulation strictly uses deterministic joint-probability Stratified Sampling (Quasi-Monte Carlo numerical scheme, $m \approx 10$) to eliminate Jensen's inequality bias in expected fatigue damage.
+- **Multi-Objective Formulation:** Dimensionless trade-off between blade degradation ($J_{damage}$) and spatial vessel routing compactness ($J_{spatial}$).
+- **Pluggable Climate Presets:** The environment supports pluggable climate presets for various operating conditions, including North Sea, US Atlantic, and Taiwan Strait.
+- **Weather Oracle:** Maintenance window accessibility probability hooks support providing isolated statistical weather predictors as observation feature extractors for future Hierarchical RL expansions.
 
 ## Installation
 
-Whisper Env must be installed locally via pip:
+WHISPER-RL must be installed locally via pip:
 
 ```bash
 git clone <repository_url>
@@ -20,9 +21,9 @@ cd <repository_directory>
 pip install -e .
 ```
 
-The package manages dependencies such as `gymnasium`, `py_wake`, `numpy`, `pandas`, and `xarray` through `pyproject.toml`. Note that testing and execution require this local installation.
+The package manages dependencies such as `gymnasium`, `py_wake`, `numpy`, `pandas`, `xarray`, `stable-baselines3`, and `seaborn` through `pyproject.toml`. Note that testing and execution require this local installation.
 
-## End-to-End Experiment Pipeline
+## Reproducible Experiment Workflow
 
 To reproduce the experiments, follow this exact 3-step workflow:
 
@@ -41,90 +42,9 @@ To reproduce the experiments, follow this exact 3-step workflow:
    python scripts/plot_publication.py --format both
    ```
 
-## Running Tests
+## Limitations & Assumptions
 
-Unit tests are managed via `pytest`. To run the test suite:
-
-```bash
-python3 -m pytest tests/
-```
-
-## Usage
-
-Here is a quick example of how to initiate the environment with the default configuration:
-
-```python
-from whisper_env import EnvironmentConfig, OffshoreMaintenanceEnv
-
-# Initialize with default configuration
-config = EnvironmentConfig()
-env = OffshoreMaintenanceEnv(config)
-
-# Reset the environment to get initial observation and info
-obs, info = env.reset()
-```
-
-## Architecture & Module Interaction
-
-The following Mermaid diagram visualizes the interaction between the core modules within the `whisper_env` package.
-
-*Note: While `rewards.py` might be expected, reward and objective logic are modularized within `models.py` (e.g., `RewardModel`, `SpatialGroupingObjective`) and `config.py`.*
-
-```mermaid
-classDiagram
-    class Environment {
-        +OffshoreMaintenanceEnv
-        -step(action)
-        -reset()
-    }
-
-    class Config {
-        +EnvironmentConfig
-        +WindClimateConfig
-        +WakeSolverConfig
-        +DamageSolverConfig
-        +MaintenanceConfig
-        +RewardConfig
-    }
-
-    class Models {
-        +WindClimate
-        +TransitionModel
-        +ElectricityPriceModel
-        +RewardModel
-        +SpatialGroupingObjective
-        +LoggingModel
-    }
-
-    class Physics {
-        +WakeSolver
-        +DamageSolver
-        +EnergySolver
-    }
-
-    class Maintenance {
-        +MaintenancePolicy
-        +MaintenanceResult
-    }
-
-    Environment --> Config : initializes with
-    Environment --> Models : uses for climate, prices, transitions, rewards
-    Environment --> Physics : uses for wakes, damage, energy
-    Environment --> Maintenance : uses for policy evaluation
-
-    Models --> Config : configured by
-    Physics --> Config : configured by
-    Maintenance --> Config : configured by
-
-    Physics ..> Models : Damage feeds into TransitionModel
-    Maintenance ..> Models : Interventions affect TransitionModel
-    Models ..> Environment : RewardModel outputs step reward
-```
-
-## Running Tests
-
-Unit tests are managed via `pytest`. To run the test suite:
-
-```bash
-python3 -m pytest tests/
-```
+The framework is built with the following modeling assumptions and technical limitations:
+- **Linear Scalarization Convexity Assumption:** The multi-objective formulation utilizes linear scalarization, which assumes a convex Pareto front.
+- **Euclidean Proxy Nature of Vessel Distances:** Vessel spatial routing compactness is modeled using a Euclidean distance proxy, rather than exhaustive pathfinding or graph-based constraints.
+- **Computational Trade-off of Numerical Stratification:** The deterministic stratified sampling scheme enhances numerical stability, but at a computational cost, limiting the speed of step execution compared to purely random sampling approximations.
