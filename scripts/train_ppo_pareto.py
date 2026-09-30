@@ -2,6 +2,7 @@ import os
 import argparse
 import numpy as np
 import torch
+import dataclasses
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from whisper_env import (
@@ -80,8 +81,10 @@ def train_pareto_agents(args):
             superposition_model=LinearSum(),
             turbulence_model=STF2017TurbulenceModel()
         )
-        config.wake_solver = WakeSolver(wake_config)
-        config.damage_solver = DamageSolver(damage_solver_config)
+        config = dataclasses.replace(config, 
+            wake_solver=WakeSolver(wake_config), 
+            damage_solver=DamageSolver(damage_solver_config)
+        )
 
         env = OffshoreMaintenanceEnv(config)
         env = FlattenDictWrapper(env)
@@ -98,7 +101,7 @@ def train_pareto_agents(args):
             seed=args.seed,
             verbose=1
         )
-        model.learn(total_timesteps=args.timesteps)
+        model.learn(total_timesteps=args.timesteps, progress_bar=True)
 
         model_path = os.path.join("models", f"ppo_blade_w{w}_seed{args.seed}.zip")
         model.save(model_path)

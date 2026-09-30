@@ -2,6 +2,7 @@ import os
 import csv
 import argparse
 import numpy as np
+import dataclasses
 from whisper_env import (
     get_default_config,
     OffshoreMaintenanceEnv,
@@ -118,8 +119,10 @@ def main(args):
             superposition_model=LinearSum(),
             turbulence_model=STF2017TurbulenceModel()
         )
-        config.wake_solver = WakeSolver(wake_config)
-        config.damage_solver = DamageSolver(damage_solver_config)
+        config = dataclasses.replace(config, 
+            wake_solver=WakeSolver(wake_config), 
+            damage_solver=DamageSolver(damage_solver_config)
+        )
 
         env = OffshoreMaintenanceEnv(config)
 
