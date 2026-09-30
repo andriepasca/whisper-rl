@@ -54,6 +54,9 @@ class OffshoreMaintenanceEnv(gym.Env):
         self.n_turbines = self.wake_solver.n_turbines
         self.rng = np.random.default_rng(config.seed)
 
+        if self.config.damage_solver.config.del_flap_ref is None or self.config.damage_solver.config.del_edge_ref is None:
+            self._calibrate_del_refs()
+
         # Weather Oracle for window probability
         self.weather_oracle = None
 
@@ -112,6 +115,60 @@ class OffshoreMaintenanceEnv(gym.Env):
         })
 
         self.action_space = spaces.MultiDiscrete([2] * self.n_turbines)
+
+    def _calibrate_del_refs(self):
+        """
+        Calibrate DEL reference values via Monte Carlo sampling to hit expected 20-year design life.
+        """
+        import dataclasses
+        m = self.config.damage_solver.config.m_coef
+
+        del_flap_samples = []
+        del_edge_samples = []
+
+        # Run a Monte Carlo loop: 1,000 samples per month for 12 months (12,000 total)
+        for month in range(1, 13):
+            for _ in range(1000):
+                ambient_u, ambient_wd = self.wind_climate.sample(month, self.rng)
+                wake = self.wake_solver.solve(ambient_u, ambient_wd)
+
+                # Extract effective conditions for Turbine 0 (freestream index 0)
+                u_eff_t0 = wake["u_eff"][0]
+                ti_eff_t0 = wake["ti_eff"][0]
+
+                # Predict DEL
+                dels = self.damage_solver.predict_del(u_eff_t0, ti_eff_t0)
+                del_flap_samples.append(dels["del_flap"])
+                del_edge_samples.append(dels["del_edge"])
+
+        # Calculate the m-th power expected value (cast to np.float64)
+        del_flap_arr = np.array(del_flap_samples, dtype=np.float64)
+        del_edge_arr = np.array(del_edge_samples, dtype=np.float64)
+
+        mean_del_flap_m = np.mean(del_flap_arr ** m)
+        mean_del_edge_m = np.mean(del_edge_arr ** m)
+
+        calibrated_flap_ref = mean_del_flap_m ** (1.0 / m)
+        calibrated_edge_ref = mean_del_edge_m ** (1.0 / m)
+
+        new_damage_config = dataclasses.replace(
+            self.config.damage_solver.config,
+            del_flap_ref=float(calibrated_flap_ref),
+            del_edge_ref=float(calibrated_edge_ref)
+        )
+
+        # Instantiate a new DamageSolver with the calibrated config
+        from .physics import DamageSolver
+        new_damage_solver = DamageSolver(new_damage_config)
+
+        # Update the environment config using dataclasses.replace because it's frozen
+        self.config = dataclasses.replace(
+            self.config,
+            damage_solver=new_damage_solver
+        )
+
+        # Update the reference to the new damage solver in the environment
+        self.damage_solver = new_damage_solver
 
     @property
     def max_steps(self):

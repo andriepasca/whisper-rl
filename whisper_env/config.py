@@ -96,8 +96,8 @@ class DamageSolverConfig:
     del_flap_column: str = "del_flap"
     del_edge_column: str = "del_edge"
     m_coef: float = 10.0
-    del_flap_ref: float = 2803.716141751299
-    del_edge_ref: float = 5588.786717232858
+    del_flap_ref: Optional[float] = None
+    del_edge_ref: Optional[float] = None
     design_life_years: float = 20.0
 
 @dataclass
