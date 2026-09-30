@@ -18,5 +18,7 @@ dependencies = [
     "scipy",
     "matplotlib",
     "gymnasium",
-    "py_wake"
+    "py_wake",
+    "stable-baselines3>=2.0.0",
+    "seaborn"
 ]
