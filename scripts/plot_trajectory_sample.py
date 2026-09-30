@@ -20,9 +20,10 @@ def main():
     parser = argparse.ArgumentParser(description="Simulate and plot 30-year stochastic HI trajectory.")
     parser.add_argument("--turbine-csv", type=str, required=True, help="Path to the turbine CSV file.")
     parser.add_argument("--damage-csv", type=str, required=True, help="Path to the damage CSV file.")
+    parser.add_argument("--seeds", type=int, nargs='+', default=[42, 100, 2024], help="Seeds to use for generating trajectories.")
     args = parser.parse_args()
 
-    seeds = [42, 100, 2024]
+    seeds = args.seeds
     
     plt.figure(figsize=(10, 6))
 
@@ -44,8 +45,6 @@ def main():
         # 3. Set up DamageSolverConfig with the required values
         damage_solver_config = DamageSolverConfig(
             csv_path=args.damage_csv,
-            del_flap_ref=2745.01,
-            del_edge_ref=5653.38,
             design_life_years=20.0
         )
         damage_solver = DamageSolver(damage_solver_config)
@@ -89,8 +88,12 @@ def main():
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig('trajectory_sample.png')
-    print("Saved plot to trajectory_sample.png")
+    
+    # Save plot
+    save_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'experiments', 'trajectory.png'))
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    plt.savefig(save_path)
+    print(f"Saved plot to {save_path}")
 
 if __name__ == "__main__":
     main()
