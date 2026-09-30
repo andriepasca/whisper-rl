@@ -46,7 +46,7 @@ class TurbineConfig:
     name: str = "NREL 5-MW"
     rotor_diameter: float = 126.0
     hub_height: float = 90.0
-    csv_path: str = "/content/drive/MyDrive/1openfast_data/NREL_Reference_5MW_126.csv" # source from https://github.com/NatLabRockies/turbine-models
+    csv_path: str = "./data/NREL_Reference_5MW_126.csv" # source from https://github.com/NatLabRockies/turbine-models
     power_unit: str = "kW"
 
 def _default_wake_deficit_model():
@@ -78,7 +78,7 @@ class DamageSolverConfig:
     """
     Configuration for the DamageSolver response surfaces and fatigue calculations.
     """
-    csv_path: str = "/content/drive/MyDrive/1openfast_data/response_surface_df_200.csv"
+    csv_path: str = "./data/response_surface_df_200.csv"
     u_column: str = "u"
     ti_column: str = "ti"
     del_flap_column: str = "del_flap"
@@ -147,28 +147,30 @@ class RewardObjective:
     normalize: bool = False
     scale: float = 1.0
 
-def _default_reward_objectives():
-    layout_config = LayoutConfig()
-    x = layout_config.x
-    y = layout_config.y
-    spatial_reference_scale = float(np.max(np.sqrt((x[:, None] - x[None, :])**2 + (y[:, None] - y[None, :])**2)))
-    return {
-        "damage_burden": RewardObjective(
-            weight=0.85, direction="min", normalize=True, scale=25*6,
-        ),
-        "spatial_grouping": RewardObjective(
-            weight=0.15, direction="min", normalize=True, scale=spatial_reference_scale,
-        ),
-    }
-
 @dataclass(frozen=True)
 class RewardConfig:
     """
     Configuration of reward scalarization.
     """
-    objectives: dict[str, RewardObjective] = field(
-        default_factory=_default_reward_objectives
-    )
+    objectives: dict[str, RewardObjective] = field(default_factory=dict)
+
+    # Exposed Multi-Objective parameters
+    w_damage: float = 0.85
+    w_spatial: float = 0.15
+    damage_scale: float = 25*6
+    spatial_scale: float = 1.0
+
+    def __post_init__(self):
+        if not self.objectives:
+            objectives = {
+                "damage_burden": RewardObjective(
+                    weight=self.w_damage, direction="min", normalize=True, scale=self.damage_scale,
+                ),
+                "spatial_grouping": RewardObjective(
+                    weight=self.w_spatial, direction="min", normalize=True, scale=self.spatial_scale,
+                ),
+            }
+            object.__setattr__(self, 'objectives', objectives)
 
 def _default_wind_climate():
     from .models import WindClimate
@@ -259,3 +261,76 @@ class EnvironmentConfig:
                 "initial_hi length must equal number of turbines."
             )
         return hi.copy()
+
+def get_default_config(
+    n_turbines: int = 25,
+    w_damage: float = 0.85,
+    w_spatial: float = 0.15,
+    data_dir: str = "./data",
+    seed: int = 42,
+    **kwargs
+) -> EnvironmentConfig:
+    """
+    Generates a master EnvironmentConfig with top-level customizable parameters.
+    Dynamically scales the layout, updates paths, and exposes MORL parameters.
+    """
+    from .models import RandomScatteredLayout, WindClimate, TransitionModel, ElectricityPriceModel, SpatialGroupingObjective, RewardModel, LoggingModel
+    from .physics import WakeSolver, DamageSolver, EnergySolver
+    from .maintenance import MaintenancePolicy
+    import os
+
+    # 1. Dynamic Layout Scaling
+    layout = RandomScatteredLayout(
+        D=126.0, n_turbines=n_turbines, min_spacing_D=7.0, farm_scale=1.0, seed=seed
+    )
+    layout_config = LayoutConfig(x=np.array(layout.x), y=np.array(layout.y))
+
+    # 2. Path Eradication
+    turbine_csv = os.path.join(data_dir, "NREL_Reference_5MW_126.csv")
+    damage_csv = os.path.join(data_dir, "response_surface_df_200.csv")
+
+    turbine_config = TurbineConfig(csv_path=turbine_csv)
+    wake_solver_config = WakeSolverConfig(
+        layout=layout_config,
+        turbine=turbine_config
+    )
+    damage_solver_config = DamageSolverConfig(csv_path=damage_csv)
+
+    # 3. Dynamic Reward Objectives
+    x = layout_config.x
+    y = layout_config.y
+    spatial_reference_scale = float(np.max(np.sqrt((x[:, None] - x[None, :])**2 + (y[:, None] - y[None, :])**2)))
+
+    reward_config = RewardConfig(
+        w_damage=w_damage,
+        w_spatial=w_spatial,
+        damage_scale=n_turbines * 6,
+        spatial_scale=spatial_reference_scale
+    )
+
+    # 4. Solvers and Models
+    wind_climate = WindClimate(WindClimateConfig())
+    wake_solver = WakeSolver(wake_solver_config)
+    damage_solver = DamageSolver(damage_solver_config)
+    maintenance_policy = MaintenancePolicy(MaintenanceConfig())
+    transition_model = TransitionModel()
+    electricity_price_model = ElectricityPriceModel()
+    spatial_grouping_objective = SpatialGroupingObjective(layout_config)
+    reward_model = RewardModel(reward_config)
+    energy_solver = EnergySolver()
+    logger = LoggingModel()
+
+    return EnvironmentConfig(
+        wind_climate=wind_climate,
+        wake_solver=wake_solver,
+        damage_solver=damage_solver,
+        maintenance_policy=maintenance_policy,
+        transition_model=transition_model,
+        electricity_price_model=electricity_price_model,
+        spatial_grouping_objective=spatial_grouping_objective,
+        reward_model=reward_model,
+        energy_solver=energy_solver,
+        logger=logger,
+        seed=seed,
+        **kwargs
+    )

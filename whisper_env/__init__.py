@@ -9,6 +9,7 @@ from .config import (
     RewardObjective,
     RewardConfig,
     EnvironmentConfig,
+    get_default_config,
 )
 from .maintenance import MaintenanceResult, MaintenancePolicy
 from .physics import WakeSolver, DamageSolver, EnergyResult, EnergySolver
@@ -36,6 +37,7 @@ __all__ = [
     "RewardObjective",
     "RewardConfig",
     "EnvironmentConfig",
+    "get_default_config",
     "MaintenanceResult",
     "MaintenancePolicy",
     "WakeSolver",
