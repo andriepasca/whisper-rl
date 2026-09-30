@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -32,48 +33,16 @@ from py_wake.deficit_models import BastankhahGaussianDeficit
 from py_wake.superposition_models import LinearSum
 from py_wake.turbulence_models import STF2017TurbulenceModel
 
-def create_mock_csvs():
-    # Turbine
-    fd_t, path_t = tempfile.mkstemp(suffix='.csv')
-    df_t = pd.DataFrame({
-        "Wind speed [m/s]": np.linspace(3, 25, 23),
-        "Power [kW]": np.linspace(0, 5000, 23),
-        "Thrust coefficient [-]": np.linspace(0.1, 0.8, 23),
-        "Cp": np.linspace(0.2, 0.4, 23),
-        "Ct": np.linspace(0.1, 0.8, 23)
-    })
-    df_t.to_csv(path_t, index=False)
-    os.close(fd_t)
-
-    # Damage
-    fd_d, path_d = tempfile.mkstemp(suffix='.csv')
-    u = np.linspace(3, 25, 5)
-    ti = np.linspace(0.05, 0.25, 5)
-    U, TI = np.meshgrid(u, ti)
-
-    # We want degradation to be small enough so it runs 25 years without breaking immediately
-    df_d = pd.DataFrame({
-        "u": U.flatten(),
-        "ti": TI.flatten(),
-        "del_flap": np.random.uniform(100, 500, 25),
-        "del_edge": np.random.uniform(200, 800, 25)
-    })
-    df_d.to_csv(path_d, index=False)
-    os.close(fd_d)
-
-    return path_t, path_d
-
-def run_validation():
-    path_t, path_d = create_mock_csvs()
-
+def run_validation(turbine_csv, damage_csv, design_life):
     layout = RandomScatteredLayout(n_turbines=4, seed=42)
     layout_config = LayoutConfig(x=layout.x, y=layout.y)
 
     turbine_config = TurbineConfig(
-        name="ValidationTurbine",
-        rotor_diameter=120.0,
+        name="NREL 5-MW",
+        rotor_diameter=126.0,
         hub_height=90.0,
-        csv_path=path_t
+        csv_path=turbine_csv,
+        power_unit="kW"
     )
 
     wake_config = WakeSolverConfig(
@@ -85,7 +54,17 @@ def run_validation():
     )
     wake_solver = WakeSolver(wake_config)
 
-    damage_config = DamageSolverConfig(csv_path=path_d)
+    damage_config = DamageSolverConfig(
+        csv_path=damage_csv,
+        u_column="u",
+        ti_column="ti",
+        del_flap_column="del_flap",
+        del_edge_column="del_edge",
+        m_coef=10.0,
+        del_flap_ref=2803.716141751299,
+        del_edge_ref=5588.786717232858,
+        design_life_years=design_life
+    )
     damage_solver = DamageSolver(damage_config)
 
     weibull = {m: {"c": 8.0, "k": 2.0} for m in range(1, 13)}
@@ -168,8 +147,17 @@ def run_validation():
     plt.savefig(output_path)
     print(f"Validation complete. Saved plot to {output_path}")
 
-    os.remove(path_t)
-    os.remove(path_d)
 
 if __name__ == "__main__":
-    run_validation()
+    parser = argparse.ArgumentParser(description="Run Baseline Validation")
+    parser.add_argument("--turbine-csv", type=str, required=True, help="Path to the turbine power curve data")
+    parser.add_argument("--damage-csv", type=str, required=True, help="Path to the response surface damage data")
+    parser.add_argument("--design-life", type=float, default=20.0, help="Design life in years (Default: 20)")
+
+    args = parser.parse_args()
+
+    run_validation(
+        turbine_csv=args.turbine_csv,
+        damage_csv=args.damage_csv,
+        design_life=args.design_life
+    )
