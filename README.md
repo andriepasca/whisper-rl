@@ -11,6 +11,59 @@ WHISPER-RL (Wind turbine Health-Index & Spatial Policy Environment for Reinforce
 - **Pluggable Climate Presets:** The environment supports pluggable climate presets for various operating conditions, including North Sea, US Atlantic, and Taiwan Strait.
 - **Weather Oracle:** Maintenance window accessibility probability hooks support providing isolated statistical weather predictors as observation feature extractors for future Hierarchical RL expansions.
 
+## Architecture
+
+```mermaid
+classDiagram
+    class Environment {
+        +OffshoreMaintenanceEnv
+        -step(action)
+        -reset()
+    }
+
+    class Config {
+        +EnvironmentConfig
+        +WindClimateConfig
+        +WakeSolverConfig
+        +DamageSolverConfig
+        +MaintenanceConfig
+        +RewardConfig
+    }
+
+    class Models {
+        +WindClimate
+        +TransitionModel
+        +ElectricityPriceModel
+        +RewardModel
+        +SpatialGroupingObjective
+        +LoggingModel
+    }
+
+    class Physics {
+        +WakeSolver
+        +DamageSolver
+        +EnergySolver
+    }
+
+    class Maintenance {
+        +MaintenancePolicy
+        +MaintenanceResult
+    }
+
+    Environment --> Config : initializes with
+    Environment --> Models : uses for climate, prices, transitions, rewards
+    Environment --> Physics : uses for wakes, damage, energy
+    Environment --> Maintenance : uses for policy evaluation
+
+    Models --> Config : configured by
+    Physics --> Config : configured by
+    Maintenance --> Config : configured by
+
+    Physics ..> Models : Damage feeds into TransitionModel
+    Maintenance ..> Models : Interventions affect TransitionModel
+    Models ..> Environment : RewardModel outputs step reward
+```
+
 ## Installation
 
 WHISPER-RL must be installed locally via pip:
