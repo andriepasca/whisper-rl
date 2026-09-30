@@ -12,6 +12,13 @@ def _default_monthly_weibull():
         11: {"k": 2.2, "c": 12.0}, 12: {"k": 2.2, "c": 13.0},
     }
 
+
+CLIMATE_PRESETS = {
+    "north_sea": _default_monthly_weibull(),
+    "us_atlantic": {m: {"k": 2.1, "c": 9.2} for m in range(1, 13)},
+    "taiwan_strait": {m: {"k": 1.8, "c": 11.0} for m in range(1, 13)}
+}
+
 def _default_wind_direction():
     return np.arange(0.0, 360.0, 10.0)
 
@@ -20,9 +27,14 @@ class WindClimateConfig:
     """
     Configuration for the ambient wind climate.
     """
-    monthly_weibull: dict = field(default_factory=_default_monthly_weibull)
+    monthly_weibull: dict = field(default_factory=dict)
     wind_direction: np.ndarray = field(default_factory=_default_wind_direction)
     wind_direction_probability: Optional[np.ndarray] = None
+    climate_preset: str = "north_sea"
+
+    def __post_init__(self):
+        if not self.monthly_weibull:
+            self.monthly_weibull = CLIMATE_PRESETS.get(self.climate_preset, CLIMATE_PRESETS["north_sea"])
 
 def _get_default_layout():
     from .models import RandomScatteredLayout
@@ -238,6 +250,8 @@ class EnvironmentConfig:
     ti_min: float = 0.03
     ti_max: float = 0.30
     seed: int = 42
+    climate_preset: str = "north_sea"
+    include_weather_window: bool = False
 
     def get_initial_hi(self, n_turbines: int) -> np.ndarray:
         """
@@ -268,6 +282,8 @@ def get_default_config(
     w_spatial: float = 0.15,
     data_dir: str = "./data",
     seed: int = 42,
+    climate_preset: str = "north_sea",
+    include_weather_window: bool = False,
     **kwargs
 ) -> EnvironmentConfig:
     """
@@ -309,7 +325,7 @@ def get_default_config(
     )
 
     # 4. Solvers and Models
-    wind_climate = WindClimate(WindClimateConfig())
+    wind_climate = WindClimate(WindClimateConfig(climate_preset=climate_preset))
     wake_solver = WakeSolver(wake_solver_config)
     damage_solver = DamageSolver(damage_solver_config)
     maintenance_policy = MaintenancePolicy(MaintenanceConfig())
@@ -332,5 +348,7 @@ def get_default_config(
         energy_solver=energy_solver,
         logger=logger,
         seed=seed,
+        climate_preset=climate_preset,
+        include_weather_window=include_weather_window,
         **kwargs
     )

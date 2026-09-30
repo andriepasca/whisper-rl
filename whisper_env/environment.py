@@ -2,6 +2,7 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 from .config import EnvironmentConfig
+from .utils import WeatherOracle
 
 def cyclic_encode(x, period):
     """
@@ -53,6 +54,9 @@ class OffshoreMaintenanceEnv(gym.Env):
         self.n_turbines = self.wake_solver.n_turbines
         self.rng = np.random.default_rng(config.seed)
 
+        # Weather Oracle for window probability
+        self.weather_oracle = None
+
         # Weather
         self.ambient_u = None
         self.ambient_wd = None
@@ -92,10 +96,14 @@ class OffshoreMaintenanceEnv(gym.Env):
             1: "Intervention"
         }
 
+        farm_spaces = {
+            "month": spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32),
+        }
+        if self.config.include_weather_window:
+            farm_spaces["weather_window_prob"] = spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
+
         self.observation_space = spaces.Dict({
-            "farm": spaces.Dict({
-                "month": spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32),
-            }),
+            "farm": spaces.Dict(farm_spaces),
 
             "turbines": spaces.Dict({
                 "HI": spaces.Box(low=0, high=1, shape=(self.n_turbines,), dtype=np.float32),
@@ -123,10 +131,23 @@ class OffshoreMaintenanceEnv(gym.Env):
         """
         month = cyclic_encode(self.current_month - 1, period=12)
         protection_remaining_norm = (self.protection_remaining / self.config.max_protection_duration)
+        farm_obs = {
+            "month": month,
+        }
+        if self.config.include_weather_window:
+            current_wind_speed = self.ambient_u if self.ambient_u is not None else 0.0
+            # If _get_obs is called before reset, weather_oracle might be None. Initialize it here just in case.
+            if self.weather_oracle is None:
+                # Default to month 1 if current_month is not yet set
+                m = self.current_month if self.current_month is not None else 1
+                weibull_params = self.wind_climate.config.monthly_weibull[m]
+                self.weather_oracle = WeatherOracle(weibull_shape=weibull_params["k"], weibull_scale=weibull_params["c"])
+
+            prob = self.weather_oracle.get_maintenance_window_probability(current_wind_speed=current_wind_speed, lookahead_days=3)
+            farm_obs["weather_window_prob"] = np.array([prob], dtype=np.float32)
+
         return {
-            "farm": {
-                "month": month,
-            },
+            "farm": farm_obs,
             "turbines": {
                 "HI": self.HI.astype(np.float32),
                 "protection_remaining": protection_remaining_norm.astype(np.float32)
@@ -213,6 +234,10 @@ class OffshoreMaintenanceEnv(gym.Env):
             month=self.current_month,
             rng=self.rng
         )
+
+        if self.config.include_weather_window:
+            weibull_params = self.wind_climate.config.monthly_weibull[self.current_month]
+            self.weather_oracle = WeatherOracle(weibull_shape=weibull_params["k"], weibull_scale=weibull_params["c"])
 
         self.logger.reset()
 
