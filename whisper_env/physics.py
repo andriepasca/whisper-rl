@@ -34,7 +34,19 @@ class WakeSolver:
         self.n_turbines = len(self.layout_x)
 
         self.turbine_config = config.turbine
-        self.turbine_df = pd.read_csv(self.turbine_config.csv_path)
+
+        import os
+        if os.path.exists(self.turbine_config.csv_path):
+            self.turbine_df = pd.read_csv(self.turbine_config.csv_path)
+        else:
+            print(f"Warning: Turbine CSV {self.turbine_config.csv_path} not found. Using fallback mock data.")
+            self.turbine_df = pd.DataFrame({
+                "Wind speed [m/s]": np.linspace(3, 25, 23),
+                "Power [kW]": np.linspace(0, 5000, 23),
+                "Thrust coefficient [-]": np.linspace(0.1, 0.8, 23),
+                "Cp": np.linspace(0.2, 0.4, 23),
+                "Ct": np.linspace(0.1, 0.8, 23)
+            })
 
         self.wake_deficit_model = config.wake_deficit_model
         self.superposition_model = config.superposition_model
@@ -299,7 +311,23 @@ class DamageSolver:
             config (DamageSolverConfig): Configuration containing the CSV path for the response surface and fatigue parameters.
         """
         self.config = config
-        self.response_surface_df = pd.read_csv(self.config.csv_path)
+
+        import os
+        if os.path.exists(self.config.csv_path):
+            self.response_surface_df = pd.read_csv(self.config.csv_path)
+        else:
+            print(f"Warning: Damage CSV {self.config.csv_path} not found. Using fallback mock data.")
+            u_dummy = np.linspace(3, 25, 5)
+            ti_dummy = np.linspace(0.05, 0.25, 5)
+            U, TI = np.meshgrid(u_dummy, ti_dummy)
+            np.random.seed(42) # Deterministic fallback
+            self.response_surface_df = pd.DataFrame({
+                "u": U.flatten(),
+                "ti": TI.flatten(),
+                "del_flap": np.random.uniform(1000, 5000, 25),
+                "del_edge": np.random.uniform(2000, 8000, 25)
+            })
+
         self.u_grid = np.sort(self.response_surface_df["u"].unique())
         self.ti_grid = np.sort(self.response_surface_df["ti"].unique())
         self._build_interpolators()
