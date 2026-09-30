@@ -1,5 +1,6 @@
 import os
 import csv
+import argparse
 import numpy as np
 from whisper_env import get_default_config, OffshoreMaintenanceEnv
 import gymnasium as gym
@@ -32,8 +33,8 @@ class DummyAgent:
             n_turbines = obs["turbines"]["HI"].shape[0]
         return (np.random.rand(n_turbines) < self.action_prob).astype(np.int32), None
 
-def main():
-    print("Starting Pareto benchmark evaluation...")
+def main(seed):
+    print(f"Starting Pareto benchmark evaluation with seed {seed}...")
 
     try:
         from stable_baselines3 import PPO
@@ -48,12 +49,16 @@ def main():
 
     for w, prob in zip(weights, dummy_probs):
         model_id = f"model_w_{w}"
-        model_path = f"models/ppo_blade_w{w}.zip"
+        model_path_seeded = f"models/ppo_blade_w{w}_seed{seed}.zip"
+        model_path_unseeded = f"models/ppo_blade_w{w}.zip"
 
         agent = None
-        if sb3_available and os.path.exists(model_path):
-            print(f"Found trained model for {model_id}, loading...")
-            agent = PPO.load(model_path)
+        if sb3_available and os.path.exists(model_path_seeded):
+            print(f"Found trained model for {model_id} (seeded), loading...")
+            agent = PPO.load(model_path_seeded)
+        elif sb3_available and os.path.exists(model_path_unseeded):
+            print(f"Found trained model for {model_id} (unseeded), loading...")
+            agent = PPO.load(model_path_unseeded)
         else:
             print(f"Trained model not found for {model_id}, falling back to DummyAgent.")
             agent = DummyAgent(action_prob=prob)
@@ -65,7 +70,7 @@ def main():
         })
 
     results = []
-    base_seed = 12345
+    base_seed = seed
 
     for agent_info in agents:
         print(f"Evaluating {agent_info['model_id']}...")
@@ -115,4 +120,7 @@ def main():
     print(f"Results exported to {csv_path}")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Benchmark Pareto agents")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for evaluation (default: 42)")
+    args = parser.parse_args()
+    main(args.seed)

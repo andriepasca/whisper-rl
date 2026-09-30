@@ -1,21 +1,18 @@
 # Whisper Env
 
-Whisper Env is a modular Python package for modeling an offshore wind farm maintenance environment. It provides a highly configurable framework for simulating wind climates, turbine damage accumulation, maintenance interventions, and energy production, ultimately designed for reinforcement learning (RL) agents or heuristic optimization.
+## Overview
 
-## Project Overview
+Whisper Env is a modular Gymnasium environment for Offshore Wind Turbine Blade Maintenance addressing the Green Paradox (balancing structural blade degradation $J_{damage}$ against carbon/spatial vessel logistics $J_{spatial}$).
 
-The project simulates an offshore maintenance scenario by coupling:
-- **Wind Climate:** Stochastically samples ambient wind speed and direction, with a constraint on deterministic joint-probability stratified sampling to ensure robust fatigue damage evaluation.
-- **Physics Modeling:** Includes a Wake Solver to compute effective wind speeds and turbulence intensities, a Damage Solver to accumulate fatigue damage based on structural response surfaces, and an Energy Solver.
-- **Maintenance Policy:** Handles intervention decisions (e.g., repairs or replacements), integrating constraints such as thresholds, downtime, costs, carbon emissions, and damage multipliers.
-- **RL Environment:** Wraps the simulation in a `gymnasium.Env` compliant interface (`OffshoreMaintenanceEnv`).
+## Key Scientific Features
 
-### Key Scientific Constraint: Fatigue Damage Sampling
-The project enforces a critical scientific constraint in its wind sampling logic. The `iter_stratified` method in `whisper_env/models.py` strictly uses **deterministic joint-probability Stratified Sampling**. This approach is required to calculate expected fatigue damage and avoid **Jensen's Inequality bias**. Random sampling (e.g., `rng.choice`) for fatigue aggregation is strictly prohibited. By integrating over discrete probability strata instead of relying on limited random samples, the simulation ensures mathematical stability and accuracy in accumulated damage and power outputs.
+- **Deterministic Stratified Sampling:** The simulation strictly uses deterministic joint-probability Stratified Sampling to eliminate Jensen's inequality bias in expected fatigue damage. Random sampling (e.g., `rng.choice`) for fatigue aggregation is strictly prohibited. By integrating over discrete probability strata instead of relying on limited random samples, the simulation ensures mathematical stability and accuracy in accumulated damage and power outputs.
+- **Pluggable Climate Presets:** The environment supports pluggable climate presets (`north_sea`, `us_atlantic`, `taiwan_strait`) for various operating conditions.
+- **Hierarchical RL (HRL):** Weather Oracle hooks support providing isolated statistical weather predictors as observation feature extractors for top-level agents.
 
 ## Installation
 
-Whisper Env can be installed locally via pip.
+Whisper Env must be installed locally via pip:
 
 ```bash
 git clone <repository_url>
@@ -24,6 +21,33 @@ pip install -e .
 ```
 
 The package manages dependencies such as `gymnasium`, `py_wake`, `numpy`, `pandas`, and `xarray` through `pyproject.toml`. Note that testing and execution require this local installation.
+
+## End-to-End Experiment Pipeline
+
+To reproduce the experiments, follow this exact 3-step workflow:
+
+1. **Train Pareto agents:**
+   ```bash
+   python scripts/train_ppo_pareto.py --timesteps 50000 --seed 42
+   ```
+
+2. **Benchmark evaluation:**
+   ```bash
+   python scripts/benchmark_pareto.py --seed 42
+   ```
+
+3. **Generate Q1 publication plots (300 DPI):**
+   ```bash
+   python scripts/plot_publication.py --format both
+   ```
+
+## Running Tests
+
+Unit tests are managed via `pytest`. To run the test suite:
+
+```bash
+python3 -m pytest tests/
+```
 
 ## Usage
 
