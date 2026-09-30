@@ -67,7 +67,11 @@ def test_wake_solver_no_nans(mock_turbine_csv):
     assert not np.any(np.isnan(res["ti_eff"]))
 
 def test_damage_solver_no_nans(mock_damage_csv):
-    config = DamageSolverConfig(csv_path=mock_damage_csv)
+    config = DamageSolverConfig(
+        csv_path=mock_damage_csv,
+        del_flap_ref=2800.0,
+        del_edge_ref=5500.0
+    )
     solver = DamageSolver(config)
 
     u_eff = np.array([10.0, 8.5])
