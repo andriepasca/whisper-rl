@@ -30,7 +30,7 @@ def load_trajectories(log_dir="logs"):
             data.append(json.load(f))
     return data
 
-def plot_pareto_front(data, output_dir="plots"):
+def plot_pareto_front(data, output_dir="plots", fmt="both"):
     os.makedirs(output_dir, exist_ok=True)
 
     j_damage = []
@@ -66,11 +66,16 @@ def plot_pareto_front(data, output_dir="plots"):
     plt.ylabel('Spatial Logistics Cost (J_spatial)')
     plt.title('Pareto Front: Degradation vs Logistics')
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "pareto_front.pdf"), format="pdf", dpi=300)
-    plt.close()
-    print(f"Saved pareto front plot to {output_dir}/pareto_front.pdf")
 
-def plot_health_index_trajectory(data, output_dir="plots"):
+    if fmt in ["pdf", "both"]:
+        plt.savefig(os.path.join(output_dir, "pareto_front.pdf"), format="pdf", dpi=300)
+        print(f"Saved pareto front plot to {output_dir}/pareto_front.pdf")
+    if fmt in ["png", "both"]:
+        plt.savefig(os.path.join(output_dir, "pareto_front.png"), format="png", dpi=300)
+        print(f"Saved pareto front plot to {output_dir}/pareto_front.png")
+    plt.close()
+
+def plot_health_index_trajectory(data, output_dir="plots", fmt="both"):
     os.makedirs(output_dir, exist_ok=True)
 
     if not data:
@@ -118,19 +123,108 @@ def plot_health_index_trajectory(data, output_dir="plots"):
     plt.ylim(0, 1.0)
     plt.legend()
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "hi_trajectory.pdf"), format="pdf", dpi=300)
+
+    if fmt in ["pdf", "both"]:
+        plt.savefig(os.path.join(output_dir, "hi_trajectory.pdf"), format="pdf", dpi=300)
+        print(f"Saved health index trajectory plot to {output_dir}/hi_trajectory.pdf")
+    if fmt in ["png", "both"]:
+        plt.savefig(os.path.join(output_dir, "hi_trajectory.png"), format="png", dpi=300)
+        print(f"Saved health index trajectory plot to {output_dir}/hi_trajectory.png")
     plt.close()
-    print(f"Saved health index trajectory plot to {output_dir}/hi_trajectory.pdf")
+
+def plot_spatial_dispatch_map(env_config, sample_action, output_dir="plots", fmt="both"):
+    import itertools
+    os.makedirs(output_dir, exist_ok=True)
+
+    try:
+        x = env_config.spatial_grouping_objective.x
+        y = env_config.spatial_grouping_objective.y
+    except AttributeError:
+        print("Cannot extract spatial grouping coordinates from env_config.")
+        return
+
+    plt.figure(figsize=(8, 8))
+
+    selected_x = []
+    selected_y = []
+
+    for i in range(len(x)):
+        if i < len(sample_action) and sample_action[i] == 1:
+            plt.scatter(x[i], y[i], color='red', s=100, label='Serviced' if len(selected_x) == 0 else "")
+            selected_x.append(x[i])
+            selected_y.append(y[i])
+        else:
+            plt.scatter(x[i], y[i], color='blue', s=100, label='Unserviced' if i == 0 else "")
+
+    # Draw dashed lines for mean pairwise spatial distance
+    for (x1, y1), (x2, y2) in itertools.combinations(zip(selected_x, selected_y), 2):
+        plt.plot([x1, x2], [y1, y2], 'k--', alpha=0.5)
+
+    plt.xlabel('x [m]')
+    plt.ylabel('y [m]')
+    plt.title('Spatial Dispatch Map')
+    plt.legend()
+    plt.axis('equal')
+    plt.grid(True)
+    plt.tight_layout()
+
+    if fmt in ["pdf", "both"]:
+        plt.savefig(os.path.join(output_dir, "spatial_dispatch_map.pdf"), format="pdf", dpi=300)
+        print(f"Saved spatial dispatch map to {output_dir}/spatial_dispatch_map.pdf")
+    if fmt in ["png", "both"]:
+        plt.savefig(os.path.join(output_dir, "spatial_dispatch_map.png"), format="png", dpi=300)
+        print(f"Saved spatial dispatch map to {output_dir}/spatial_dispatch_map.png")
+    plt.close()
+
+def plot_action_heatmap(log_data, output_dir="plots", fmt="both"):
+    os.makedirs(output_dir, exist_ok=True)
+
+    wind_speeds = []
+    health_indices = []
+
+    for episode in log_data:
+        for step in episode:
+            if step.get("decision_event") == True:
+                ambient_u = step.get("ambient_u")
+                actions = step.get("action", [])
+                hi_turbine = step.get("HI_turbine", [])
+
+                if ambient_u is not None and actions and hi_turbine:
+                    for a, hi in zip(actions, hi_turbine):
+                        if a == 1:
+                            wind_speeds.append(ambient_u)
+                            health_indices.append(hi)
+
+    if not wind_speeds:
+        print("No action triggered data found for Action Heatmap.")
+        return
+
+    plt.figure(figsize=(8, 6))
+    plt_sns.kdeplot(x=wind_speeds, y=health_indices, fill=True, cmap="YlOrRd", thresh=0, levels=20)
+    plt.xlabel("Ambient Wind Speed [m/s]")
+    plt.ylabel("Health Index (HI)")
+    plt.title("Action Trigger Heatmap: Wind Speed vs Health Index")
+    plt.tight_layout()
+
+    if fmt in ["pdf", "both"]:
+        plt.savefig(os.path.join(output_dir, "action_heatmap.pdf"), format="pdf", dpi=300)
+        print(f"Saved action heatmap to {output_dir}/action_heatmap.pdf")
+    if fmt in ["png", "both"]:
+        plt.savefig(os.path.join(output_dir, "action_heatmap.png"), format="png", dpi=300)
+        print(f"Saved action heatmap to {output_dir}/action_heatmap.png")
+    plt.close()
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Generate publication quality plots from trajectories.")
     parser.add_argument("--log_dir", type=str, default="logs", help="Directory containing JSON log files.")
     parser.add_argument("--out_dir", type=str, default="plots", help="Directory to save output PDFs.")
+    parser.add_argument("--format", type=str, default="both", choices=["pdf", "png", "both"], help="Format to save the plots.")
     args = parser.parse_args()
 
     data = load_trajectories(args.log_dir)
     print(f"Loaded {len(data)} trajectories.")
 
-    plot_pareto_front(data, args.out_dir)
-    plot_health_index_trajectory(data, args.out_dir)
+    plot_pareto_front(data, args.out_dir, fmt=args.format)
+    plot_health_index_trajectory(data, args.out_dir, fmt=args.format)
+    plot_action_heatmap(data, args.out_dir, fmt=args.format)
