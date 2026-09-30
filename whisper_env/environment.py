@@ -317,24 +317,22 @@ class OffshoreMaintenanceEnv(gym.Env):
         for simulation_month in range(self.decision_interval):
             months_simulated += 1
 
-            # Using expected damage/power via stratified sampling (Option B) to avoid Jensen's inequality bias
+            # Using expected damage/power via Monte Carlo Stochastic Sampling to introduce aleatoric uncertainty
             n_slices = self.config.wind_time_slices_per_month
 
             ambient_u_list = []
             ambient_wd_list = []
-            p_joint_list = []
 
-            for ambient_u, ambient_wd, p_joint in self.wind_climate.iter_stratified(
-                month=self.current_month,
-                n_u=n_slices
-            ):
+            for _ in range(n_slices):
+                ambient_u, ambient_wd = self.wind_climate.sample(
+                    month=self.current_month,
+                    rng=self.rng
+                )
                 ambient_u_list.append(ambient_u)
                 ambient_wd_list.append(ambient_wd)
-                p_joint_list.append(p_joint)
             
             ambient_u_arr = np.array(ambient_u_list)
             ambient_wd_arr = np.array(ambient_wd_list)
-            p_joint_arr = np.array(p_joint_list)
 
             # We save one arbitrarily to log the state
             self.ambient_u = float(ambient_u_arr[-1])
@@ -357,11 +355,11 @@ class OffshoreMaintenanceEnv(gym.Env):
                 duration_minutes=10.0,
             )
 
-            # scale to the full month using expected value integration
+            # scale to the full month using Monte Carlo expected value integration
             slice_damage = (damage_10min * duration_minutes / 10.0)
 
-            expected_monthly_damage = np.sum(slice_damage * p_joint_arr, axis=1)
-            expected_monthly_power = np.sum(power * p_joint_arr, axis=1)
+            expected_monthly_damage = np.mean(slice_damage, axis=1)
+            expected_monthly_power = np.mean(power, axis=1)
 
             self.u_eff = u_eff[:, -1]
             self.ti_eff = ti_eff[:, -1]
