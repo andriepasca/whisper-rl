@@ -52,13 +52,17 @@ def main(seed):
         model_path_seeded = f"models/ppo_blade_w{w}_seed{seed}.zip"
         model_path_unseeded = f"models/ppo_blade_w{w}.zip"
 
-        agent = None
-        if sb3_available and os.path.exists(model_path_seeded):
-            print(f"Found trained model for {model_id} (seeded), loading...")
-            agent = PPO.load(model_path_seeded)
-        elif sb3_available and os.path.exists(model_path_unseeded):
-            print(f"Found trained model for {model_id} (unseeded), loading...")
-            agent = PPO.load(model_path_unseeded)
+        # Check for models/ppo_blade_w{w}_seed{seed}.zip first. If not found, check models/ppo_blade_w{w}.zip. If neither exists, fall back to DummyAgent.
+        if sb3_available:
+            if os.path.exists(model_path_seeded):
+                print(f"Found trained model for {model_id} (seeded), loading...")
+                agent = PPO.load(model_path_seeded)
+            elif os.path.exists(model_path_unseeded):
+                print(f"Found trained model for {model_id} (unseeded), loading...")
+                agent = PPO.load(model_path_unseeded)
+            else:
+                print(f"Trained model not found for {model_id}, falling back to DummyAgent.")
+                agent = DummyAgent(action_prob=prob)
         else:
             print(f"Trained model not found for {model_id}, falling back to DummyAgent.")
             agent = DummyAgent(action_prob=prob)
@@ -121,6 +125,10 @@ def main(seed):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Benchmark Pareto agents")
+    # Add CLI argument --seed (type=int, default=42)
     parser.add_argument("--seed", type=int, default=42, help="Random seed for evaluation (default: 42)")
+
     args = parser.parse_args()
-    main(args.seed)
+
+    # Pass the parsed --seed argument into the main evaluation loop
+    main(seed=args.seed)
