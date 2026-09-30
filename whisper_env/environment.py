@@ -152,8 +152,8 @@ class OffshoreMaintenanceEnv(gym.Env):
             del_flap = del_preds["del_flap"]
             del_edge = del_preds["del_edge"]
             
-            del_flap_m_sum += np.sum(del_flap ** m_coef)
-            del_edge_m_sum += np.sum(del_edge ** m_coef)
+            del_flap_m_sum += np.sum(del_flap.astype(np.float64) ** m_coef)
+            del_edge_m_sum += np.sum(del_edge.astype(np.float64) ** m_coef)
             
         expected_del_flap_m = del_flap_m_sum / total_samples
         expected_del_edge_m = del_edge_m_sum / total_samples
