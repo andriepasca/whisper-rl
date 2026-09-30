@@ -359,7 +359,7 @@ class DamageSolver:
         orig_shape = np.shape(u_eff)
         u_flat = np.ravel(u_eff)
         ti_flat = np.ravel(ti_eff)
-        points = np.column_stack((u_flat, ti_flat))
+        points = (u_flat, ti_flat)
 
         del_flap = self.interpolators["del_flap"](points).astype(np.float32).reshape(orig_shape)
         del_edge = self.interpolators["del_edge"](points).astype(np.float32).reshape(orig_shape)
