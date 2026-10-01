@@ -120,23 +120,23 @@ class OffshoreMaintenanceEnv(gym.Env):
         """
         Auto-calibrates the DEL reference values based on 1000 Monte Carlo samples per month.
         """
-        samples_per_month = 1000
         m_coef = self.damage_solver.config.m_coef
         
         del_flap_m_sum = 0.0
         del_edge_m_sum = 0.0
-        total_samples = samples_per_month * 12
         
         for month in range(1, 13):
             ambient_u_list = []
             ambient_wd_list = []
-            for _ in range(samples_per_month):
-                u, wd = self.wind_climate.sample(month=month, rng=self.rng)
+            p_joint_list = []
+            for u, wd, p_joint in self.wind_climate.iter_stratified(month=month, n_u=10):
                 ambient_u_list.append(u)
                 ambient_wd_list.append(wd)
+                p_joint_list.append(p_joint)
                 
             ambient_u_arr = np.array(ambient_u_list)
             ambient_wd_arr = np.array(ambient_wd_list)
+            p_joint_arr = np.array(p_joint_list)
             
             wake = self.wake_solver.solve(
                 ambient_u=ambient_u_arr,
@@ -151,11 +151,11 @@ class OffshoreMaintenanceEnv(gym.Env):
             del_flap = del_preds["del_flap"]
             del_edge = del_preds["del_edge"]
             
-            del_flap_m_sum += np.sum(del_flap.astype(np.float64) ** m_coef)
-            del_edge_m_sum += np.sum(del_edge.astype(np.float64) ** m_coef)
+            del_flap_m_sum += np.sum((del_flap.astype(np.float64) ** m_coef) * p_joint_arr) / 12.0
+            del_edge_m_sum += np.sum((del_edge.astype(np.float64) ** m_coef) * p_joint_arr) / 12.0
             
-        expected_del_flap_m = del_flap_m_sum / total_samples
-        expected_del_edge_m = del_edge_m_sum / total_samples
+        expected_del_flap_m = del_flap_m_sum
+        expected_del_edge_m = del_edge_m_sum
         
         calibrated_flap_ref = float(expected_del_flap_m ** (1.0 / m_coef))
         calibrated_edge_ref = float(expected_del_edge_m ** (1.0 / m_coef))
@@ -367,22 +367,24 @@ class OffshoreMaintenanceEnv(gym.Env):
         for simulation_month in range(self.decision_interval):
             months_simulated += 1
 
-            # Using expected damage/power via Monte Carlo Stochastic Sampling to introduce aleatoric uncertainty
-            n_slices = self.config.wind_time_slices_per_month
+            # Determine the number of wind speed strata dynamically (e.g., matching old time slices)
+            n_u = self.config.wind_time_slices_per_month
 
             ambient_u_list = []
             ambient_wd_list = []
+            p_joint_list = []
 
-            for _ in range(n_slices):
-                ambient_u, ambient_wd = self.wind_climate.sample(
-                    month=self.current_month,
-                    rng=self.rng
-                )
-                ambient_u_list.append(ambient_u)
-                ambient_wd_list.append(ambient_wd)
-            
+            # Using deterministic Stratified Sampling for precision and avoiding Jensen's inequality
+            for u, wd, p_joint in self.wind_climate.iter_stratified(
+                month=self.current_month, n_u=n_u
+            ):
+                ambient_u_list.append(u)
+                ambient_wd_list.append(wd)
+                p_joint_list.append(p_joint)
+
             ambient_u_arr = np.array(ambient_u_list)
             ambient_wd_arr = np.array(ambient_wd_list)
+            p_joint_arr = np.array(p_joint_list)
 
             # We save one arbitrarily to log the state
             self.ambient_u = float(ambient_u_arr[-1])
@@ -405,11 +407,12 @@ class OffshoreMaintenanceEnv(gym.Env):
                 duration_minutes=10.0,
             )
 
-            # scale to the full month using Monte Carlo expected value integration
+            # scale to the full month
             slice_damage = (damage_10min * duration_minutes / 10.0)
 
-            expected_monthly_damage = np.mean(slice_damage, axis=1)
-            expected_monthly_power = np.mean(power, axis=1)
+            # Expected damage using probability-weighted strata
+            expected_monthly_damage = np.sum(slice_damage * p_joint_arr, axis=1)
+            expected_monthly_power = np.sum(power * p_joint_arr, axis=1)
 
             self.u_eff = u_eff[:, -1]
             self.ti_eff = ti_eff[:, -1]

@@ -50,6 +50,10 @@ class LayoutConfig:
     x: np.ndarray = field(default_factory=lambda: np.array(_get_default_layout().x))
     y: np.ndarray = field(default_factory=lambda: np.array(_get_default_layout().y))
 
+import os
+
+DEFAULT_DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data'))
+
 @dataclass
 class TurbineConfig:
     """
@@ -58,7 +62,7 @@ class TurbineConfig:
     name: str = "NREL 5-MW"
     rotor_diameter: float = 126.0
     hub_height: float = 90.0
-    csv_path: str = "./data/NREL_Reference_5MW_126.csv" # source from https://github.com/NatLabRockies/turbine-models
+    csv_path: str = os.path.join(DEFAULT_DATA_DIR, "NREL_Reference_5MW_126.csv") # source from https://github.com/NatLabRockies/turbine-models
     power_unit: str = "kW"
 
 def _default_wake_deficit_model():
@@ -90,7 +94,7 @@ class DamageSolverConfig:
     """
     Configuration for the DamageSolver response surfaces and fatigue calculations.
     """
-    csv_path: str = "./data/response_surface_df_200.csv"
+    csv_path: str = os.path.join(DEFAULT_DATA_DIR, "response_surface_df_200.csv")
     u_column: str = "u"
     ti_column: str = "ti"
     del_flap_column: str = "del_flap"
@@ -274,7 +278,7 @@ def get_default_config(
     n_turbines: int = 25,
     w_damage: float = 0.85,
     w_spatial: float = 0.15,
-    data_dir: str = "./data",
+    data_dir: str = DEFAULT_DATA_DIR,
     seed: int = 42,
     climate_preset: str = "north_sea",
     include_weather_window: bool = False,
