@@ -112,60 +112,6 @@ class WindClimate:
             float(ambient_wd),
         )
 
-    def iter_stratified(self, month: int, n_u: int):
-        """
-        Yields deterministic strata combinations of (ambient_u, ambient_wd, probability)
-        for joint-probability Stratified Sampling.
-
-        **Scientific Constraint:** This method enforces deterministic joint-probability
-        Stratified Sampling. This approach is strictly required to compute the expected
-        fatigue damage and power accurately by integrating over discrete probability strata.
-        It effectively eliminates Jensen's Inequality bias that would arise from simply
-        aggregating non-linear fatigue damage over random samples (e.g., using rng.choice).
-
-        Args:
-            month (int): The current month (1-12) used to select Weibull parameters.
-            n_u (int): The number of wind speed strata to discretize the CDF into.
-
-        Yields:
-            tuple[float, float, float]: The ambient wind speed, ambient wind direction,
-                                        and the joint probability of this stratum.
-        """
-        weibull = self.config.monthly_weibull[month]
-        k = weibull["k"]
-        c = weibull["c"]
-
-        # Define bounds
-        u_min = 3.0
-        u_max = 25.0
-
-        # CDF values for bounds
-        cdf_min = 1.0 - np.exp(-(u_min / c) ** k)
-        cdf_max = 1.0 - np.exp(-(u_max / c) ** k)
-        p_u_total = cdf_max - cdf_min
-
-        # We will split the CDF space from cdf_min to cdf_max into n_u equal probability intervals
-        delta_p_u = p_u_total / n_u
-
-        for i in range(n_u):
-            # Probability of this wind speed stratum
-            p_u = delta_p_u
-
-            # Midpoint of the CDF interval
-            cdf_mid = cdf_min + (i + 0.5) * delta_p_u
-
-            # Inverse CDF to get wind speed
-            ambient_u = c * (-np.log(1.0 - cdf_mid)) ** (1.0 / k)
-
-            # Iterate over wind directions
-            for j, ambient_wd in enumerate(self.config.wind_direction):
-                p_wd = self.wind_direction_probability[j]
-
-                # Joint probability
-                p_joint = p_u * p_wd
-
-                yield float(ambient_u), float(ambient_wd), float(p_joint)
-
 @dataclass
 class TransitionResult:
     HI: float
