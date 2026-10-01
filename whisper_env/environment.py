@@ -47,7 +47,6 @@ class OffshoreMaintenanceEnv(gym.Env):
         self.damage_solver = config.damage_solver
         self.maintenance_policy = config.maintenance_policy
         self.transition_model = config.transition_model
-        self.electricity_price_model = config.electricity_price_model
         self.spatial_grouping_objective = config.spatial_grouping_objective
         self.reward_model = config.reward_model
         self.logger = config.logger
@@ -290,11 +289,6 @@ class OffshoreMaintenanceEnv(gym.Env):
             rng=self.rng
         )
 
-        self.electricity_price = self.electricity_price_model.sample(
-            month=self.current_month,
-            rng=self.rng
-        )
-
         if self.config.include_weather_window:
             weibull_params = self.wind_climate.config.monthly_weibull[self.current_month]
             self.weather_oracle = WeatherOracle(weibull_shape=weibull_params["k"], weibull_scale=weibull_params["c"])
@@ -359,10 +353,6 @@ class OffshoreMaintenanceEnv(gym.Env):
             else:
                 self.repair_count[i] += 1
 
-        mean_farm_power = 0.0
-        interval_cost = 0.0
-        interval_energy = 0.0
-        interval_revenue = 0.0
         interval_damage = 0.0
         interval_damage_burden = 0.0
 
@@ -425,13 +415,8 @@ class OffshoreMaintenanceEnv(gym.Env):
             self.ti_eff = ti_eff[:, -1]
             self.power = expected_monthly_power
 
-            mean_farm_power += np.sum(self.power)
-
             self.delta_damage = expected_monthly_damage
             interval_damage += np.sum(self.delta_damage)
-
-            monthly_cost = 0.0
-            monthly_energy = 0.0
 
             for i in range(self.n_turbines):
                 maintenance = None
@@ -450,24 +435,6 @@ class OffshoreMaintenanceEnv(gym.Env):
                 self.damage_multiplier[i] = transition.damage_multiplier
                 self.protection_remaining[i] = transition.protection_remaining
 
-                availability = 1.0
-                if simulation_month == 0 and maintenance is not None:
-                    availability = max(
-                        0.0,
-                        (hours_per_month - maintenance.downtime_hours)
-                        / hours_per_month,
-                    )
-                    monthly_cost += maintenance.cost
-
-                monthly_energy += (
-                    self.power[i]
-                    * availability
-                    * hours_per_month
-                )
-
-            interval_cost += monthly_cost
-            interval_energy += monthly_energy
-            interval_revenue += monthly_energy * self.electricity_price
             interval_damage_burden += np.sum(1.0 - self.HI)
 
             self.logger.log_state(
@@ -476,7 +443,6 @@ class OffshoreMaintenanceEnv(gym.Env):
                 elapsed_month=self.elapsed_month + 1,
                 HI=self.HI.copy(),
                 power=self.power,
-                electricity_price=self.electricity_price,
                 ambient_u=self.ambient_u,
                 ambient_wd=self.ambient_wd,
                 u_eff=self.u_eff,
@@ -497,13 +463,6 @@ class OffshoreMaintenanceEnv(gym.Env):
                 truncated = True
                 break
 
-            self.electricity_price = self.electricity_price_model.sample(
-                month=self.current_month,
-                rng=self.rng
-            )
-
-        mean_farm_power /= max(months_simulated, 1)
-
         maintenance_indices = [i for i, result in enumerate(maintenance_results) if result.maintenance_type is not None]
         spatial_grouping = self.spatial_grouping_objective.solve(maintenance_indices)
 
@@ -517,11 +476,8 @@ class OffshoreMaintenanceEnv(gym.Env):
         self.logger.log_decision(
             reward=reward_result.reward,
             objectives=reward_result.objectives,
-            energy=interval_energy,
-            revenue=interval_revenue,
             interval_damage_burden=interval_damage_burden,
             spatial_grouping=spatial_grouping,
-            maintenance_cost=interval_cost,
             interval_damage=interval_damage,
             maintenance_results=maintenance_results,
             action=action,

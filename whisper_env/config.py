@@ -109,7 +109,6 @@ class MaintenanceType:
     threshold: float
 
     # Maintenance consequences
-    cost: float
     downtime_hours: float
     carbon_emission: float
     damage_multiplier: float
@@ -122,11 +121,11 @@ class MaintenanceType:
 
 def _default_maintenance_types():
     repair = MaintenanceType(
-        name="repair", threshold=0.85, cost=2_000, downtime_hours=8,
+        name="repair", threshold=0.85, downtime_hours=8,
         carbon_emission=200, damage_multiplier=0.45, duration_months=15, is_replacement=False
     )
     replacement = MaintenanceType(
-        name="replacement", threshold=0.10, cost=350_000, downtime_hours=168,
+        name="replacement", threshold=0.10, downtime_hours=168,
         carbon_emission=5_000, damage_multiplier=1.0, duration_months=1, is_replacement=True
     )
     return (repair, replacement)
@@ -204,10 +203,6 @@ def _default_transition_model():
     from .models import TransitionModel
     return TransitionModel()
 
-def _default_electricity_price_model():
-    from .models import ElectricityPriceModel
-    return ElectricityPriceModel()
-
 def _default_spatial_grouping_objective():
     from .models import SpatialGroupingObjective
     return SpatialGroupingObjective(LayoutConfig())
@@ -234,7 +229,6 @@ class EnvironmentConfig:
     damage_solver: Any = field(default_factory=_default_damage_solver)
     maintenance_policy: Any = field(default_factory=_default_maintenance_policy)
     transition_model: Any = field(default_factory=_default_transition_model)
-    electricity_price_model: Any = field(default_factory=_default_electricity_price_model)
     spatial_grouping_objective: Any = field(default_factory=_default_spatial_grouping_objective)
     reward_model: Any = field(default_factory=_default_reward_model)
     energy_solver: Any = field(default_factory=_default_energy_solver)
@@ -290,7 +284,7 @@ def get_default_config(
     Generates a master EnvironmentConfig with top-level customizable parameters.
     Dynamically scales the layout, updates paths, and exposes MORL parameters.
     """
-    from .models import RandomScatteredLayout, WindClimate, TransitionModel, ElectricityPriceModel, SpatialGroupingObjective, RewardModel, LoggingModel
+    from .models import RandomScatteredLayout, WindClimate, TransitionModel, SpatialGroupingObjective, RewardModel, LoggingModel
     from .physics import WakeSolver, DamageSolver, EnergySolver
     from .maintenance import MaintenancePolicy
     import os
@@ -330,7 +324,6 @@ def get_default_config(
     damage_solver = DamageSolver(damage_solver_config)
     maintenance_policy = MaintenancePolicy(MaintenanceConfig())
     transition_model = TransitionModel()
-    electricity_price_model = ElectricityPriceModel()
     spatial_grouping_objective = SpatialGroupingObjective(layout_config)
     reward_model = RewardModel(reward_config)
     energy_solver = EnergySolver()
@@ -342,7 +335,6 @@ def get_default_config(
         damage_solver=damage_solver,
         maintenance_policy=maintenance_policy,
         transition_model=transition_model,
-        electricity_price_model=electricity_price_model,
         spatial_grouping_objective=spatial_grouping_objective,
         reward_model=reward_model,
         energy_solver=energy_solver,

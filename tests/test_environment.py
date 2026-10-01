@@ -102,7 +102,7 @@ def env_config(mock_turbine_csv, mock_damage_csv):
     maintenance_cfg = MaintenanceConfig(
         maintenance_types=(
             MaintenanceType(
-                name="repair", threshold=0.8, cost=50000, downtime_hours=24,
+                name="repair", threshold=0.8, downtime_hours=24,
                 carbon_emission=1000, damage_multiplier=0.7, duration_months=12
             ),
         )
@@ -110,9 +110,6 @@ def env_config(mock_turbine_csv, mock_damage_csv):
     maintenance_policy = MaintenancePolicy(maintenance_cfg)
 
     transition_model = TransitionModel()
-
-    class DummyPriceModel:
-        def sample(self, month, rng): return 50.0
 
     class DummyRewardModel:
         def solve(self, metrics): return whisper_env.RewardResult(reward=0.0, objectives=metrics)
@@ -126,7 +123,6 @@ def env_config(mock_turbine_csv, mock_damage_csv):
         damage_solver=damage_solver,
         maintenance_policy=maintenance_policy,
         transition_model=transition_model,
-        electricity_price_model=DummyPriceModel(),
         spatial_grouping_objective=DummySpatialGrouping(),
         reward_model=DummyRewardModel(),
         energy_solver=EnergySolver(),
