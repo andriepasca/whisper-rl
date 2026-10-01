@@ -48,7 +48,8 @@ def main():
         env_config = dataclasses.replace(
             base_env_config,
             damage_solver=damage_solver,
-            max_simulation_years=30
+            max_simulation_years=30,
+            randomize_initial_hi=False
         )
         
         # Initialize Environment
