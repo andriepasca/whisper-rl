@@ -80,7 +80,7 @@ def test_damage_solver_no_nans(mock_damage_csv):
     damage = solver.solve(u_eff, ti_eff, duration_minutes=10.0)
     assert not np.any(np.isnan(damage))
 
-def test_iter_stratified_no_nans():
+def test_sample_no_nans():
     weibull = {m: {"c": 8.0, "k": 2.0} for m in range(1, 13)}
     wind_config = WindClimateConfig(
         monthly_weibull=weibull,
@@ -89,9 +89,11 @@ def test_iter_stratified_no_nans():
     )
     climate = WindClimate(wind_config)
 
-    # Check that stratifed sampling correctly generates valid arrays and probabilities
-    for u, wd, p in climate.iter_stratified(month=1, n_u=10):
+    rng = np.random.default_rng(42)
+
+    # Check that stochastic sampling correctly generates valid arrays
+    for _ in range(10):
+        u, wd = climate.sample(month=1, rng=rng)
         assert not np.isnan(u)
         assert not np.isnan(wd)
-        assert not np.isnan(p)
-        assert p >= 0 and p <= 1
+        assert 3.0 <= u <= 25.0

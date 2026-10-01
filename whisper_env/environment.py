@@ -118,9 +118,9 @@ class OffshoreMaintenanceEnv(gym.Env):
 
     def _calibrate_del_refs(self):
         """
-        Auto-calibrates the DEL reference values based on 1000 Monte Carlo samples per month.
+        Auto-calibrates the DEL reference values based on 100000 Monte Carlo samples per month.
         """
-        samples_per_month = 1000
+        samples_per_month = 100000
         m_coef = self.damage_solver.config.m_coef
         
         del_flap_m_sum = 0.0
@@ -367,13 +367,13 @@ class OffshoreMaintenanceEnv(gym.Env):
         for simulation_month in range(self.decision_interval):
             months_simulated += 1
 
-            # Using expected damage/power via Monte Carlo Stochastic Sampling to introduce aleatoric uncertainty
-            n_slices = self.config.wind_time_slices_per_month
+            # Use exact number of 10-minute intervals in a month to compute true stochastic trajectory
+            n_intervals = int(duration_minutes / 10.0)
 
             ambient_u_list = []
             ambient_wd_list = []
 
-            for _ in range(n_slices):
+            for _ in range(n_intervals):
                 ambient_u, ambient_wd = self.wind_climate.sample(
                     month=self.current_month,
                     rng=self.rng
@@ -408,17 +408,15 @@ class OffshoreMaintenanceEnv(gym.Env):
             damage_edge_10min = ((del_edge / self.damage_solver.config.del_edge_ref) ** m_coef) / n_ref
             damage_10min = (damage_flap_10min + damage_edge_10min) / 2
 
-            # scale to the full month using Monte Carlo expected value integration
-            slice_damage = (damage_10min * duration_minutes / 10.0)
-
-            expected_monthly_damage = np.mean(slice_damage, axis=1).astype(np.float32)
-            expected_monthly_power = np.mean(power, axis=1)
+            # True stochastic accumulation by summing all 10-minute intervals
+            stochastic_monthly_damage = np.sum(damage_10min, axis=1).astype(np.float32)
+            stochastic_monthly_power = np.mean(power, axis=1)
 
             self.u_eff = u_eff[:, -1]
             self.ti_eff = ti_eff[:, -1]
-            self.power = expected_monthly_power
+            self.power = stochastic_monthly_power
 
-            self.delta_damage = expected_monthly_damage
+            self.delta_damage = stochastic_monthly_damage
             interval_damage += np.sum(self.delta_damage)
 
             for i in range(self.n_turbines):

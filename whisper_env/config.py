@@ -94,7 +94,7 @@ class DamageSolverConfig:
     """
     Configuration for the DamageSolver response surfaces and fatigue calculations.
     """
-    csv_path: str = os.path.join(DEFAULT_DATA_DIR, "response_surface_df_200.csv")
+    csv_path: str = os.path.join(DEFAULT_DATA_DIR, "response_surface_200.csv")
     u_column: str = "u"
     ti_column: str = "ti"
     del_flap_column: str = "del_flap"
@@ -301,7 +301,7 @@ def get_default_config(
 
     # 2. Path Eradication
     turbine_csv = os.path.join(data_dir, "NREL_Reference_5MW_126.csv")
-    damage_csv = os.path.join(data_dir, "response_surface_df_200.csv")
+    damage_csv = os.path.join(data_dir, "response_surface_200.csv")
 
     turbine_config = TurbineConfig(csv_path=turbine_csv)
     wake_solver_config = WakeSolverConfig(
