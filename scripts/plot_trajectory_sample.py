@@ -49,7 +49,8 @@ def main():
             base_env_config,
             damage_solver=damage_solver,
             max_simulation_years=30,
-            randomize_initial_hi=False
+            randomize_initial_hi=False,
+            enable_logging=True
         )
         
         # Initialize Environment

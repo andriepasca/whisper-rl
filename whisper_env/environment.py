@@ -91,7 +91,6 @@ class OffshoreMaintenanceEnv(gym.Env):
         self.last_action = None
 
         # History for Plotting
-        self.history = None
 
         self.action_meaning = {
             0: "Continue",
@@ -212,10 +211,7 @@ class OffshoreMaintenanceEnv(gym.Env):
         """
         Constructs the info dictionary with supplementary environment state.
         """
-        return {
-            "damage_multiplier": self.damage_multiplier.copy(),
-            "last_action": self.last_action,
-        }
+        return {}
 
     def reset(
         self,
@@ -360,10 +356,7 @@ class OffshoreMaintenanceEnv(gym.Env):
         hours_per_month = self.config.hours_per_month
         duration_minutes = hours_per_month * 60.0
 
-        months_simulated = 0
-
         for simulation_month in range(self.decision_interval):
-            months_simulated += 1
 
             # Use exact number of 10-minute intervals in a month to compute true stochastic trajectory
             n_intervals = int(duration_minutes / 10.0)
@@ -441,20 +434,21 @@ class OffshoreMaintenanceEnv(gym.Env):
 
             interval_damage_burden += np.sum(1.0 - self.HI)
 
-            self.logger.log_state(
-                year=self.current_year,
-                month=self.current_month,
-                elapsed_month=self.elapsed_month + 1,
-                HI=self.HI.copy(),
-                power=self.power,
-                ambient_u=self.ambient_u,
-                ambient_wd=self.ambient_wd,
-                u_eff=self.u_eff,
-                ti_eff=self.ti_eff,
-                repair_params=self.repair_params,
-                repair_count=self.repair_count,
-                replacement_count=self.replacement_count,
-            )
+            if getattr(self.config, 'enable_logging', False):
+                self.logger.log_state(
+                    year=self.current_year,
+                    month=self.current_month,
+                    elapsed_month=self.elapsed_month + 1,
+                    HI=self.HI.copy(),
+                    power=self.power,
+                    ambient_u=self.ambient_u,
+                    ambient_wd=self.ambient_wd,
+                    u_eff=self.u_eff,
+                    ti_eff=self.ti_eff,
+                    repair_params=self.repair_params,
+                    repair_count=self.repair_count,
+                    replacement_count=self.replacement_count,
+                )
 
             self.elapsed_month += 1
             self.current_month += 1
@@ -477,20 +471,20 @@ class OffshoreMaintenanceEnv(gym.Env):
 
         reward_result = self.reward_model.solve(metrics)
 
-        self.logger.log_decision(
-            reward=reward_result.reward,
-            objectives=reward_result.objectives,
-            interval_damage_burden=interval_damage_burden,
-            spatial_grouping=spatial_grouping,
-            interval_damage=interval_damage,
-            maintenance_results=maintenance_results,
-            action=action,
-            protection_remaining=self.protection_remaining,
-        )
+        if getattr(self.config, 'enable_logging', False):
+            self.logger.log_decision(
+                reward=reward_result.reward,
+                objectives=reward_result.objectives,
+                interval_damage_burden=interval_damage_burden,
+                spatial_grouping=spatial_grouping,
+                interval_damage=interval_damage,
+                maintenance_results=maintenance_results,
+                action=action,
+                protection_remaining=self.protection_remaining,
+            )
 
         observation = self._get_obs()
         info = self._get_info()
-        info["maintenance_results"] = maintenance_results
 
         return (
             observation,

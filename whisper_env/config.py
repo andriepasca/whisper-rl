@@ -226,6 +226,7 @@ class EnvironmentConfig:
     seed: int = 42
     climate_preset: str = "north_sea"
     include_weather_window: bool = False
+    enable_logging: bool = False
 
     def get_initial_hi(self, n_turbines: int) -> np.ndarray:
         """
