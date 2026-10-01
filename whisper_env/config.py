@@ -92,7 +92,6 @@ class MaintenanceType:
 
     # Maintenance consequences
     downtime_hours: float
-    carbon_emission: float
     damage_multiplier: float
 
     # Duration of damage multiplier effectiveness.
@@ -104,11 +103,11 @@ class MaintenanceType:
 def _default_maintenance_types():
     repair = MaintenanceType(
         name="repair", threshold=0.85, downtime_hours=8,
-        carbon_emission=200, damage_multiplier=0.45, duration_months=15, is_replacement=False
+        damage_multiplier=0.45, duration_months=15, is_replacement=False
     )
     replacement = MaintenanceType(
         name="replacement", threshold=0.10, downtime_hours=168,
-        carbon_emission=5_000, damage_multiplier=1.0, duration_months=1, is_replacement=True
+        damage_multiplier=1.0, duration_months=1, is_replacement=True
     )
     return (repair, replacement)
 

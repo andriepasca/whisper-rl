@@ -210,38 +210,6 @@ class TransitionModel:
             protection_remaining=protection_new,
         )
 
-@dataclass
-class ElectricityPriceModel:
-    """
-    Models the stochastic electricity price for energy revenue calculations.
-    """
-
-    def __init__(
-        self,
-        monthly_mean=(90, 85, 78, 70, 62, 55, 50, 52, 60, 72, 82, 92),
-        monthly_std=(10, 10, 9, 8, 8, 7, 7, 7, 8, 9, 10, 10),
-    ):
-        self.monthly_mean = np.asarray(monthly_mean, dtype=float)
-        self.monthly_std = np.asarray(monthly_std, dtype=float)
-
-    def sample(self, month, rng):
-        """
-        Samples the electricity price for a given month.
-
-        Args:
-            month (int): The current month (1-12).
-            rng (np.random.Generator): Random number generator instance.
-
-        Returns:
-            float: The sampled electricity price.
-        """
-        mu = self.monthly_mean[month - 1]
-        sigma = self.monthly_std[month - 1]
-
-        price = rng.normal(mu, sigma)
-
-        return max(price, 0.0)
-
 class SpatialGroupingObjective:
     """
     Spatial grouping objective based on the layout of selected maintenance turbines.

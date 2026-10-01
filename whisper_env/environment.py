@@ -81,7 +81,6 @@ class OffshoreMaintenanceEnv(gym.Env):
         self.replacement_count = None
 
         # Reward
-        self.electricity_price = None
 
         # Episode
         self.current_year = None
@@ -368,11 +367,12 @@ class OffshoreMaintenanceEnv(gym.Env):
 
             # Use exact number of 10-minute intervals in a month to compute true stochastic trajectory
             n_intervals = int(duration_minutes / 10.0)
+            n_slices = getattr(self.config, "wind_time_slices_per_month", 30)
 
             ambient_u_list = []
             ambient_wd_list = []
 
-            for _ in range(n_intervals):
+            for _ in range(n_slices):
                 ambient_u, ambient_wd = self.wind_climate.sample(
                     month=self.current_month,
                     rng=self.rng
@@ -403,8 +403,9 @@ class OffshoreMaintenanceEnv(gym.Env):
             damage_edge_10min = ((del_edge / self.damage_solver.config.del_edge_ref) ** m_coef) / n_ref
             damage_10min = (damage_flap_10min + damage_edge_10min) / 2
 
-            # True stochastic accumulation by summing all 10-minute intervals
-            stochastic_monthly_damage = np.sum(damage_10min, axis=1).astype(np.float32)
+            # Compute expected 10-min damage using slices and scale to full month
+            expected_damage_10min = np.mean(damage_10min, axis=1)
+            stochastic_monthly_damage = (expected_damage_10min * n_intervals).astype(np.float32)
             stochastic_monthly_power = np.mean(power, axis=1)
 
             # Fix dead turbine exploitation
