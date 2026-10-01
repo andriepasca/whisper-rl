@@ -11,14 +11,12 @@ from whisper_env import (
     WindClimateConfig,
     LayoutConfig,
     TurbineConfig,
-    WakeSolverConfig,
     DamageSolverConfig,
     MaintenanceType,
     MaintenanceConfig,
     RewardObjective,
     RewardConfig,
     MaintenancePolicy,
-    WakeSolver,
     DamageSolver,
     EnergySolver,
     WindClimate,
@@ -29,9 +27,6 @@ from whisper_env import (
     LoggingModel,
     RandomScatteredLayout,
 )
-from py_wake.deficit_models import BastankhahGaussianDeficit
-from py_wake.superposition_models import LinearSum
-from py_wake.turbulence_models import STF2017TurbulenceModel
 
 def run_validation(turbine_csv, damage_csv, design_life):
     layout = RandomScatteredLayout(n_turbines=4, seed=42)
@@ -44,15 +39,6 @@ def run_validation(turbine_csv, damage_csv, design_life):
         csv_path=turbine_csv,
         power_unit="kW"
     )
-
-    wake_config = WakeSolverConfig(
-        layout=layout_config,
-        turbine=turbine_config,
-        wake_deficit_model=BastankhahGaussianDeficit(),
-        superposition_model=LinearSum(),
-        turbulence_model=STF2017TurbulenceModel()
-    )
-    wake_solver = WakeSolver(wake_config)
 
     damage_config = DamageSolverConfig(
         csv_path=damage_csv,
@@ -101,7 +87,6 @@ def run_validation(turbine_csv, damage_csv, design_life):
     # 25 years simulation (300 months)
     config = EnvironmentConfig(
         wind_climate=wind_climate,
-        wake_solver=wake_solver,
         damage_solver=damage_solver,
         maintenance_policy=maintenance_policy,
         transition_model=transition_model,

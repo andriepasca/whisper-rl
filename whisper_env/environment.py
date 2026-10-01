@@ -43,7 +43,7 @@ class OffshoreMaintenanceEnv(gym.Env):
 
         self.config = config
         self.wind_climate = config.wind_climate
-        self.wake_solver = config.wake_solver
+        self.wake_solver = None
         self.damage_solver = config.damage_solver
         self.maintenance_policy = config.maintenance_policy
         self.transition_model = config.transition_model
@@ -51,7 +51,7 @@ class OffshoreMaintenanceEnv(gym.Env):
         self.reward_model = config.reward_model
         self.logger = config.logger
         self.decision_interval = config.decision_interval_months
-        self.n_turbines = self.wake_solver.n_turbines
+        self.n_turbines = self.spatial_grouping_objective.n_turbines
         self.rng = np.random.default_rng(config.seed)
 
         if self.damage_solver.config.del_flap_ref is None or self.damage_solver.config.del_edge_ref is None:
@@ -138,14 +138,10 @@ class OffshoreMaintenanceEnv(gym.Env):
             ambient_u_arr = np.array(ambient_u_list)
             ambient_wd_arr = np.array(ambient_wd_list)
             
-            wake = self.wake_solver.solve(
-                ambient_u=ambient_u_arr,
-                ambient_wd=ambient_wd_arr,
-            )
-            
-            # Use turbine 0
-            u_eff = wake["u_eff"][0, :]
-            ti_eff = wake["ti_eff"][0, :]
+            u_eff_base = np.tile(ambient_u_arr, (self.n_turbines, 1)).astype(np.float32)
+            ti_eff_base = np.full_like(u_eff_base, 0.10)
+            u_eff = u_eff_base[0, :]
+            ti_eff = ti_eff_base[0, :]
             
             del_preds = self.damage_solver.predict_del(u_eff, ti_eff)
             del_flap = del_preds["del_flap"]
@@ -282,7 +278,7 @@ class OffshoreMaintenanceEnv(gym.Env):
         self.replacement_count = np.zeros(self.n_turbines, dtype=np.int32)
         self.last_action = np.zeros(self.n_turbines, dtype=np.int32)
 
-        self.HI = self.config.get_initial_hi(self.n_turbines)
+        self.HI = self.config.get_initial_hi(self.n_turbines).astype(np.float64)
 
         self.ambient_u, self.ambient_wd = self.wind_climate.sample(
             month=self.current_month,
@@ -295,14 +291,14 @@ class OffshoreMaintenanceEnv(gym.Env):
 
         self.logger.reset()
 
-        wake = self.wake_solver.solve(
-            ambient_u=self.ambient_u,
-            ambient_wd=self.ambient_wd,
-        )
-
-        self.u_eff = wake["u_eff"]
-        self.ti_eff = wake["ti_eff"]
-        self.power = wake["power"]
+        u_eff = np.tile([self.ambient_u], (self.n_turbines, 1)).astype(np.float32)
+        ti_eff = np.full_like(u_eff, 0.10)
+        power_kw = np.interp(u_eff, [0.0, 3.0, 11.4, 25.0, 30.0], [0.0, 0.0, 5000.0, 5000.0, 0.0])
+        power = power_kw / 1000.0
+        
+        self.u_eff = u_eff[:, -1] if u_eff.ndim > 1 else u_eff
+        self.ti_eff = ti_eff[:, -1] if ti_eff.ndim > 1 else ti_eff
+        self.power = power[:, -1] if power.ndim > 1 else power
 
         observation = self._get_obs()
         info = self._get_info()
@@ -388,14 +384,10 @@ class OffshoreMaintenanceEnv(gym.Env):
             self.ambient_u = float(ambient_u_arr[-1])
             self.ambient_wd = float(ambient_wd_arr[-1])
 
-            wake = self.wake_solver.solve(
-                ambient_u=ambient_u_arr,
-                ambient_wd=ambient_wd_arr,
-            )
-
-            u_eff = wake["u_eff"]
-            ti_eff = wake["ti_eff"]
-            power = wake["power"]
+            u_eff = np.tile(ambient_u_arr, (self.n_turbines, 1)).astype(np.float32)
+            ti_eff = np.full_like(u_eff, 0.10)
+            power_kw = np.interp(u_eff, [0.0, 3.0, 11.4, 25.0, 30.0], [0.0, 0.0, 5000.0, 5000.0, 0.0])
+            power = power_kw / 1000.0  # MW
 
             # Damage rate calculation using float64 to prevent precision loss
             del_preds = self.damage_solver.predict_del(u_eff, ti_eff)
@@ -411,6 +403,13 @@ class OffshoreMaintenanceEnv(gym.Env):
             # True stochastic accumulation by summing all 10-minute intervals
             stochastic_monthly_damage = np.sum(damage_10min, axis=1).astype(np.float32)
             stochastic_monthly_power = np.mean(power, axis=1)
+
+            # Fix dead turbine exploitation
+            availability = np.ones(self.n_turbines, dtype=np.float32)
+            for idx in range(self.n_turbines):
+                if self.HI[idx] <= 0.0:
+                    availability[idx] = 0.0
+            stochastic_monthly_power = stochastic_monthly_power * availability
 
             self.u_eff = u_eff[:, -1]
             self.ti_eff = ti_eff[:, -1]

@@ -8,13 +8,8 @@ from whisper_env import (
     OffshoreMaintenanceEnv,
     TurbineConfig,
     DamageSolverConfig,
-    WakeSolverConfig,
-    WakeSolver,
     DamageSolver
 )
-from py_wake.deficit_models import BastankhahGaussianDeficit
-from py_wake.superposition_models import LinearSum
-from py_wake.turbulence_models import STF2017TurbulenceModel
 import gymnasium as gym
 from gymnasium import spaces
 
@@ -112,15 +107,7 @@ def main(args):
             design_life_years=20
         )
 
-        wake_config = WakeSolverConfig(
-            layout=config.wake_solver.config.layout,
-            turbine=turbine_config,
-            wake_deficit_model=BastankhahGaussianDeficit(),
-            superposition_model=LinearSum(),
-            turbulence_model=STF2017TurbulenceModel()
-        )
         config = dataclasses.replace(config, 
-            wake_solver=WakeSolver(wake_config), 
             damage_solver=DamageSolver(damage_solver_config)
         )
 

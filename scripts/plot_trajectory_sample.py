@@ -14,12 +14,12 @@ from whisper_env.config import (
     get_default_config
 )
 from whisper_env.environment import OffshoreMaintenanceEnv
-from whisper_env.physics import WakeSolver, DamageSolver
+from whisper_env.physics import DamageSolver
 
 def main():
     parser = argparse.ArgumentParser(description="Simulate and plot 30-year stochastic HI trajectory.")
-    parser.add_argument("--turbine-csv", type=str, required=True, help="Path to the turbine CSV file.")
-    parser.add_argument("--damage-csv", type=str, required=True, help="Path to the damage CSV file.")
+    parser.add_argument("--turbine-csv", type=str, help="Path to the turbine CSV file.")
+    parser.add_argument("--damage-csv", type=str, help="Path to the damage CSV file.")
     parser.add_argument("--seeds", type=int, nargs='+', default=[42, 100, 2024], help="Seeds to use for generating trajectories.")
     args = parser.parse_args()
 
@@ -32,27 +32,21 @@ def main():
         base_env_config = get_default_config(seed=seed)
         
         # 2. Override TurbineConfig
-        turbine_config = TurbineConfig(csv_path=args.turbine_csv)
-        
-        # Recreate WakeSolverConfig with new TurbineConfig, preserving layout
-        base_wake_config = base_env_config.wake_solver.config
-        wake_solver_config = dataclasses.replace(
-            base_wake_config,
-            turbine=turbine_config
-        )
-        wake_solver = WakeSolver(wake_solver_config)
+        turbine_kwargs = {}
+        if args.turbine_csv:
+            turbine_kwargs['csv_path'] = args.turbine_csv
+        turbine_config = TurbineConfig(**turbine_kwargs)
         
         # 3. Set up DamageSolverConfig with the required values
-        damage_solver_config = DamageSolverConfig(
-            csv_path=args.damage_csv,
-            design_life_years=20.0
-        )
+        damage_kwargs = {'design_life_years': 20.0}
+        if args.damage_csv:
+            damage_kwargs['csv_path'] = args.damage_csv
+        damage_solver_config = DamageSolverConfig(**damage_kwargs)
         damage_solver = DamageSolver(damage_solver_config)
         
         # 4. Replace solvers and update max_simulation_years (Frozen Dataclass mutability rule)
         env_config = dataclasses.replace(
             base_env_config,
-            wake_solver=wake_solver,
             damage_solver=damage_solver,
             max_simulation_years=30
         )

@@ -2,7 +2,6 @@ from .config import (
     WindClimateConfig,
     LayoutConfig,
     TurbineConfig,
-    WakeSolverConfig,
     DamageSolverConfig,
     MaintenanceType,
     MaintenanceConfig,
@@ -12,7 +11,7 @@ from .config import (
     get_default_config,
 )
 from .maintenance import MaintenanceResult, MaintenancePolicy
-from .physics import WakeSolver, DamageSolver, EnergyResult, EnergySolver
+from .physics import DamageSolver, EnergyResult, EnergySolver
 from .models import (
     WindClimate,
     TransitionResult,
@@ -30,7 +29,6 @@ __all__ = [
     "WindClimateConfig",
     "LayoutConfig",
     "TurbineConfig",
-    "WakeSolverConfig",
     "DamageSolverConfig",
     "MaintenanceType",
     "MaintenanceConfig",
@@ -40,7 +38,6 @@ __all__ = [
     "get_default_config",
     "MaintenanceResult",
     "MaintenancePolicy",
-    "WakeSolver",
     "DamageSolver",
     "EnergyResult",
     "EnergySolver",

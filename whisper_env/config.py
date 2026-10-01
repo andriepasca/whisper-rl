@@ -65,29 +65,7 @@ class TurbineConfig:
     csv_path: str = os.path.join(DEFAULT_DATA_DIR, "NREL_Reference_5MW_126.csv") # source from https://github.com/NatLabRockies/turbine-models
     power_unit: str = "kW"
 
-def _default_wake_deficit_model():
-    from py_wake.deficit_models import NoWakeDeficit
-    return NoWakeDeficit()
 
-def _default_superposition_model():
-    from py_wake.superposition_models import LinearSum
-    return LinearSum()
-
-def _default_turbulence_model():
-    from py_wake.superposition_models import SqrMaxSum
-    from py_wake.turbulence_models import STF2017TurbulenceModel
-    return STF2017TurbulenceModel(addedTurbulenceSuperpositionModel=SqrMaxSum())
-
-@dataclass
-class WakeSolverConfig:
-    """
-    Configuration for the WakeSolver, integrating layout, turbine, and py_wake models.
-    """
-    layout: LayoutConfig = field(default_factory=LayoutConfig)
-    turbine: TurbineConfig = field(default_factory=TurbineConfig)
-    wake_deficit_model: Any = field(default_factory=_default_wake_deficit_model)
-    superposition_model: Any = field(default_factory=_default_superposition_model)
-    turbulence_model: Any = field(default_factory=_default_turbulence_model)
 
 @dataclass
 class DamageSolverConfig:
@@ -191,9 +169,7 @@ def _default_wind_climate():
     from .models import WindClimate
     return WindClimate(WindClimateConfig())
 
-def _default_wake_solver():
-    from .physics import WakeSolver
-    return WakeSolver(WakeSolverConfig())
+
 
 def _default_damage_solver():
     from .physics import DamageSolver
@@ -229,7 +205,7 @@ class EnvironmentConfig:
     Master configuration for the OffshoreMaintenanceEnv simulation environment.
     """
     wind_climate: Any = field(default_factory=_default_wind_climate)
-    wake_solver: Any = field(default_factory=_default_wake_solver)
+
     damage_solver: Any = field(default_factory=_default_damage_solver)
     maintenance_policy: Any = field(default_factory=_default_maintenance_policy)
     transition_model: Any = field(default_factory=_default_transition_model)
@@ -289,7 +265,7 @@ def get_default_config(
     Dynamically scales the layout, updates paths, and exposes MORL parameters.
     """
     from .models import RandomScatteredLayout, WindClimate, TransitionModel, SpatialGroupingObjective, RewardModel, LoggingModel
-    from .physics import WakeSolver, DamageSolver, EnergySolver
+    from .physics import DamageSolver, EnergySolver
     from .maintenance import MaintenancePolicy
     import os
 
@@ -304,10 +280,7 @@ def get_default_config(
     damage_csv = os.path.join(data_dir, "response_surface_200.csv")
 
     turbine_config = TurbineConfig(csv_path=turbine_csv)
-    wake_solver_config = WakeSolverConfig(
-        layout=layout_config,
-        turbine=turbine_config
-    )
+
     damage_solver_config = DamageSolverConfig(csv_path=damage_csv)
 
     # 3. Dynamic Reward Objectives
@@ -324,7 +297,7 @@ def get_default_config(
 
     # 4. Solvers and Models
     wind_climate = WindClimate(WindClimateConfig(climate_preset=climate_preset))
-    wake_solver = WakeSolver(wake_solver_config)
+
     damage_solver = DamageSolver(damage_solver_config)
     maintenance_policy = MaintenancePolicy(MaintenanceConfig())
     transition_model = TransitionModel()
@@ -335,7 +308,7 @@ def get_default_config(
 
     return EnvironmentConfig(
         wind_climate=wind_climate,
-        wake_solver=wake_solver,
+
         damage_solver=damage_solver,
         maintenance_policy=maintenance_policy,
         transition_model=transition_model,
