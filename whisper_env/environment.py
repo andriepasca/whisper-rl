@@ -278,7 +278,10 @@ class OffshoreMaintenanceEnv(gym.Env):
         self.replacement_count = np.zeros(self.n_turbines, dtype=np.int32)
         self.last_action = np.zeros(self.n_turbines, dtype=np.int32)
 
-        self.HI = self.config.get_initial_hi(self.n_turbines).astype(np.float64)
+        if getattr(self.config, "randomize_initial_hi", False) or (options is not None and options.get("randomize_initial_hi", False)):
+            self.HI = self.rng.uniform(0.3, 1.0, size=self.n_turbines).astype(np.float64)
+        else:
+            self.HI = self.config.get_initial_hi(self.n_turbines).astype(np.float64)
 
         self.ambient_u, self.ambient_wd = self.wind_climate.sample(
             month=self.current_month,

@@ -214,6 +214,7 @@ class EnvironmentConfig:
     energy_solver: Any = field(default_factory=_default_energy_solver)
     logger: Any = field(default_factory=_default_logger)
     max_protection_duration: int = 15
+    randomize_initial_hi: bool = True
     initial_hi: float | np.ndarray = 1.0
     wind_time_slices_per_month: int = 30
     hours_per_month: float = 730.5
