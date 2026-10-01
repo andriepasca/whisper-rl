@@ -477,7 +477,6 @@ class LoggingModel:
         elapsed_month,
         HI,
         power,
-        electricity_price,
         ambient_u,
         ambient_wd,
         u_eff,
@@ -504,8 +503,6 @@ class LoggingModel:
                 "u_eff": u_eff.copy().tolist(),
                 "ti_eff": ti_eff.copy().tolist(),
                 "power": power.copy().tolist(),
-                "mean_farm_power": float(np.mean(power)),
-                "electricity_price": float(electricity_price),
                 "repair_params": {
                     "threshold": float(repair_params["threshold"]),
                     "multiplier": float(repair_params["multiplier"]),
@@ -519,9 +516,6 @@ class LoggingModel:
                 "action": None,
                 "maintenance_type": None,
                 "reward": None,
-                "energy": None,
-                "maintenance_cost": None,
-                "revenue": None,
                 "interval_damage": None,
                 "interval_damage_burden": None,
                 "spatial_grouping": None,
@@ -534,9 +528,6 @@ class LoggingModel:
         *,
         reward,
         objectives,
-        energy,
-        revenue,
-        maintenance_cost,
         interval_damage,
         interval_damage_burden,
         spatial_grouping,
@@ -553,9 +544,6 @@ class LoggingModel:
         row = self.history[-1]
         row["decision_event"] = True
         row["action"] = action.copy().tolist()
-        row["energy"] = float(energy)
-        row["revenue"] = float(revenue)
-        row["maintenance_cost"] = float(maintenance_cost)
         row["interval_damage_burden"] = float(interval_damage_burden)
         row["spatial_grouping"] = float(spatial_grouping)
         row["interval_damage"] = float(interval_damage)

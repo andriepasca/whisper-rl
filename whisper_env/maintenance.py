@@ -9,7 +9,6 @@ class MaintenanceResult:
     """
     maintenance_type: Optional[MaintenanceType]
 
-    cost: float
     downtime_hours: float
     carbon_emission: float
 
@@ -93,7 +92,6 @@ class MaintenancePolicy:
         return MaintenanceResult(
             maintenance_type=maintenance,
 
-            cost=maintenance.cost,
             downtime_hours=maintenance.downtime_hours,
             carbon_emission=maintenance.carbon_emission,
 
@@ -124,7 +122,6 @@ class MaintenancePolicy:
         return MaintenanceResult(
             maintenance_type=None,
 
-            cost=0.0,
             downtime_hours=0.0,
             carbon_emission=0.0,
 
