@@ -24,7 +24,6 @@ classDiagram
     class Config {
         +EnvironmentConfig
         +WindClimateConfig
-        +WakeSolverConfig
         +DamageSolverConfig
         +MaintenanceConfig
         +RewardConfig
@@ -40,7 +39,6 @@ classDiagram
     }
 
     class Physics {
-        +WakeSolver
         +DamageSolver
         +EnergySolver
     }
@@ -52,7 +50,7 @@ classDiagram
 
     Environment --> Config : initializes with
     Environment --> Models : uses for climate, prices, transitions, rewards
-    Environment --> Physics : uses for wakes, damage, energy
+    Environment --> Physics : uses for damage, energy
     Environment --> Maintenance : uses for policy evaluation
 
     Models --> Config : configured by
@@ -74,7 +72,7 @@ cd <repository_directory>
 pip install -e .
 ```
 
-The package manages dependencies such as `gymnasium`, `py_wake`, `numpy`, `pandas`, `xarray`, `stable-baselines3`, and `seaborn` through `pyproject.toml`. Note that testing and execution require this local installation.
+The package manages dependencies such as `gymnasium`, `numpy`, `pandas`, `xarray`, `stable-baselines3`, and `seaborn` through `pyproject.toml`. Note that testing and execution require this local installation.
 
 ## Reproducible Experiment Workflow
 

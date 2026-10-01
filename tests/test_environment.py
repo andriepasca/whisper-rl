@@ -11,14 +11,12 @@ from whisper_env import (
     WindClimateConfig,
     LayoutConfig,
     TurbineConfig,
-    WakeSolverConfig,
     DamageSolverConfig,
     MaintenanceType,
     MaintenanceConfig,
     RewardObjective,
     RewardConfig,
     MaintenancePolicy,
-    WakeSolver,
     DamageSolver,
     EnergySolver,
     WindClimate,
@@ -29,9 +27,6 @@ from whisper_env import (
     LoggingModel,
     RandomScatteredLayout,
 )
-from py_wake.deficit_models import BastankhahGaussianDeficit
-from py_wake.superposition_models import LinearSum
-from py_wake.turbulence_models import STF2017TurbulenceModel
 
 @pytest.fixture
 def mock_turbine_csv():
@@ -78,15 +73,6 @@ def env_config(mock_turbine_csv, mock_damage_csv):
         csv_path=mock_turbine_csv
     )
 
-    wake_config = WakeSolverConfig(
-        layout=layout_config,
-        turbine=turbine_config,
-        wake_deficit_model=BastankhahGaussianDeficit(),
-        superposition_model=LinearSum(),
-        turbulence_model=STF2017TurbulenceModel()
-    )
-    wake_solver = WakeSolver(wake_config)
-
     damage_config = DamageSolverConfig(csv_path=mock_damage_csv)
     damage_solver = DamageSolver(damage_config)
 
@@ -119,7 +105,6 @@ def env_config(mock_turbine_csv, mock_damage_csv):
 
     config = EnvironmentConfig(
         wind_climate=wind_climate,
-        wake_solver=wake_solver,
         damage_solver=damage_solver,
         maintenance_policy=maintenance_policy,
         transition_model=transition_model,

@@ -10,7 +10,7 @@ cd <repository_directory>
 pip install -e .
 ```
 
-Dependencies include `gymnasium`, `py_wake`, `numpy`, `pandas`, `xarray`, `stable-baselines3`, and `seaborn`.
+Dependencies include `gymnasium`, `numpy`, `pandas`, `xarray`, `stable-baselines3`, and `seaborn`.
 
 ## Quickstart
 

@@ -5,28 +5,9 @@ import tempfile
 import pandas as pd
 
 from whisper_env import (
-    WakeSolverConfig, WakeSolver,
     DamageSolverConfig, DamageSolver,
     LayoutConfig, TurbineConfig, WindClimateConfig, WindClimate
 )
-from py_wake.deficit_models import BastankhahGaussianDeficit
-from py_wake.superposition_models import LinearSum
-from py_wake.turbulence_models import STF2017TurbulenceModel
-
-@pytest.fixture
-def mock_turbine_csv():
-    fd, path = tempfile.mkstemp(suffix='.csv')
-    df = pd.DataFrame({
-        "Wind speed [m/s]": np.linspace(3, 25, 23),
-        "Power [kW]": np.linspace(0, 5000, 23),
-        "Thrust coefficient [-]": np.linspace(0.1, 0.8, 23),
-        "Cp": np.linspace(0.2, 0.4, 23),
-        "Ct": np.linspace(0.1, 0.8, 23)
-    })
-    df.to_csv(path, index=False)
-    yield path
-    os.close(fd)
-    os.remove(path)
 
 @pytest.fixture
 def mock_damage_csv():
@@ -45,26 +26,6 @@ def mock_damage_csv():
     yield path
     os.close(fd)
     os.remove(path)
-
-def test_wake_solver_no_nans(mock_turbine_csv):
-    layout_config = LayoutConfig(x=np.array([0, 500]), y=np.array([0, 0]))
-    turbine_config = TurbineConfig(
-        name="Test", rotor_diameter=100.0, hub_height=100.0, csv_path=mock_turbine_csv
-    )
-    config = WakeSolverConfig(
-        layout=layout_config,
-        turbine=turbine_config,
-        wake_deficit_model=BastankhahGaussianDeficit(),
-        superposition_model=LinearSum(),
-        turbulence_model=STF2017TurbulenceModel()
-    )
-    solver = WakeSolver(config)
-
-    res = solver.solve(ambient_u=10.0, ambient_wd=270.0)
-    assert "power" in res
-    assert not np.any(np.isnan(res["power"]))
-    assert not np.any(np.isnan(res["u_eff"]))
-    assert not np.any(np.isnan(res["ti_eff"]))
 
 def test_damage_solver_no_nans(mock_damage_csv):
     config = DamageSolverConfig(
