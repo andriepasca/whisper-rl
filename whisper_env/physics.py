@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 from dataclasses import dataclass
-from scipy.interpolate import RegularGridInterpolator
 
 from .config import DamageSolverConfig
 
@@ -36,33 +35,27 @@ class DamageSolver:
                 "del_edge": np.random.uniform(2000, 8000, 25)
             })
 
-        self.u_grid = np.sort(self.response_surface_df["u"].unique())
-        self.ti_grid = np.sort(self.response_surface_df["ti"].unique())
-        self._build_interpolators()
-
-    def _create_interpolator(self, value_column):
-        surface = (
+        self.u_unique = np.sort(self.response_surface_df["u"].unique())
+        self.ti_unique = np.sort(self.response_surface_df["ti"].unique())
+        
+        self.flap_grid = (
             self.response_surface_df
             .pivot(
                 index=self.config.u_column,
                 columns=self.config.ti_column,
-                values=value_column
+                values=self.config.del_flap_column
             )
             .values
         )
-        return RegularGridInterpolator(
-            (self.u_grid, self.ti_grid),
-            surface,
-            method="linear",
-            bounds_error=False,
-            fill_value=None
+        self.edge_grid = (
+            self.response_surface_df
+            .pivot(
+                index=self.config.u_column,
+                columns=self.config.ti_column,
+                values=self.config.del_edge_column
+            )
+            .values
         )
-
-    def _build_interpolators(self):
-        self.interpolators = {
-            "del_flap": self._create_interpolator(self.config.del_flap_column),
-            "del_edge": self._create_interpolator(self.config.del_edge_column),
-        }
 
     def predict_del(
         self,
@@ -79,17 +72,23 @@ class DamageSolver:
         Returns:
             dict: Dictionary containing arrays of predicted DEL for flap (`del_flap`) and edge (`del_edge`).
         """
-        orig_shape = np.shape(u_eff)
-        u_flat = np.ravel(u_eff)
-        ti_flat = np.ravel(ti_eff)
-        points = (u_flat, ti_flat)
-
-        del_flap = self.interpolators["del_flap"](points).astype(np.float32).reshape(orig_shape)
-        del_edge = self.interpolators["del_edge"](points).astype(np.float32).reshape(orig_shape)
+        u_eff = np.asarray(u_eff)
+        ti_eff = np.asarray(ti_eff)
+        
+        orig_shape = u_eff.shape
+        
+        u_eff_clip = np.clip(u_eff, self.u_unique[0], self.u_unique[-1])
+        ti_eff_clip = np.clip(ti_eff, self.ti_unique[0], self.ti_unique[-1])
+        
+        idx_u = np.clip(np.searchsorted(self.u_unique, u_eff_clip), 0, len(self.u_unique) - 1)
+        idx_ti = np.clip(np.searchsorted(self.ti_unique, ti_eff_clip), 0, len(self.ti_unique) - 1)
+        
+        del_flap = self.flap_grid[idx_u, idx_ti].astype(np.float32)
+        del_edge = self.edge_grid[idx_u, idx_ti].astype(np.float32)
 
         return {
-            "del_flap": del_flap,
-            "del_edge": del_edge,
+            "del_flap": del_flap.reshape(orig_shape),
+            "del_edge": del_edge.reshape(orig_shape),
         }
 
     def solve(
