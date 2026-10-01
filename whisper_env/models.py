@@ -574,6 +574,16 @@ class RandomScatteredLayout:
         """
         Calculates geometric and spatial info about the generated layout.
         """
+        if self.n_turbines == 1:
+            return {
+                "number_of_turbines": 1,
+                "rotor_diameter_m": self.D,
+                "minimum_spacing_m": 0.0,
+                "minimum_spacing_D": 0.0,
+                "mean_pair_distance_m": 0.0,
+                "farm_area_m2": 0.0
+            }
+
         pairwise_distances = []
         for i in range(self.n_turbines):
             for j in range(i + 1, self.n_turbines):
