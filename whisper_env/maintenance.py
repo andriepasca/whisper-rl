@@ -10,7 +10,6 @@ class MaintenanceResult:
     maintenance_type: Optional[MaintenanceType]
 
     downtime_hours: float
-    carbon_emission: float
 
     # Applied to future fatigue damage.
     damage_multiplier: float
@@ -93,7 +92,6 @@ class MaintenancePolicy:
             maintenance_type=maintenance,
 
             downtime_hours=maintenance.downtime_hours,
-            carbon_emission=maintenance.carbon_emission,
 
             damage_multiplier=maintenance.damage_multiplier,
             protection_duration=maintenance.duration_months,
@@ -123,7 +121,6 @@ class MaintenancePolicy:
             maintenance_type=None,
 
             downtime_hours=0.0,
-            carbon_emission=0.0,
 
             damage_multiplier=1.0,
             protection_duration=0,
