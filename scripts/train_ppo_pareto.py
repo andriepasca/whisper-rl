@@ -89,7 +89,8 @@ def train_pareto_agents(args):
             learning_rate=args.lr,
             n_steps=args.n_steps,
             seed=args.seed,
-            verbose=1
+            verbose=1,
+            tensorboard_log="./logs/tensorboard/"
         )
         model.learn(total_timesteps=args.timesteps, progress_bar=True)
 
