@@ -73,7 +73,7 @@ class WindClimate:
 
     def sample(self, month, rng, size=None):
         """
-        Stochastically samples ambient wind speed and direction for a given month.
+        Stochastically samples ambient wind speed for a given month.
 
         Args:
             month (int): The current month (1-12) used to select Weibull parameters.
@@ -81,8 +81,8 @@ class WindClimate:
             size (Optional[int]): Number of samples to draw. If None, returns scalars.
 
         Returns:
-            If size is None, returns (float, float) for (wind speed, direction).
-            If size is not None, returns (np.ndarray, np.ndarray) of shape (size,).
+            If size is None, returns float for wind speed.
+            If size is not None, returns np.ndarray of shape (size,).
         """
 
         # --------------------------------------------------
@@ -99,12 +99,7 @@ class WindClimate:
                 if 3.0 <= ambient_u <= 25.0:
                     break
 
-            ambient_wd = rng.choice(
-                self.config.wind_direction,
-                p=self.wind_direction_probability,
-            )
-
-            return float(ambient_u), float(ambient_wd)
+            return float(ambient_u)
         else:
             ambient_u = np.zeros(size)
             needed = np.ones(size, dtype=bool)
@@ -118,13 +113,7 @@ class WindClimate:
                 ambient_u[valid_indices] = u_samples[valid]
                 needed[valid_indices] = False
 
-            ambient_wd = rng.choice(
-                self.config.wind_direction,
-                p=self.wind_direction_probability,
-                size=size
-            )
-
-            return ambient_u, ambient_wd
+            return ambient_u
 
 @dataclass
 class TransitionResult:
@@ -413,7 +402,6 @@ class LoggingModel:
         HI,
         power,
         ambient_u,
-        ambient_wd,
         u_eff,
         ti_eff,
         repair_params: Dict[str, Any],
@@ -434,7 +422,6 @@ class LoggingModel:
                 "HI_max": float(np.max(HI)),
                 "HI_turbine": HI.copy().tolist(),
                 "ambient_u": float(ambient_u),
-                "ambient_wd": float(ambient_wd),
                 "u_eff": u_eff.copy().tolist(),
                 "ti_eff": ti_eff.copy().tolist(),
                 "power": power.copy().tolist(),

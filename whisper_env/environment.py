@@ -65,7 +65,6 @@ class OffshoreMaintenanceEnv(gym.Env):
 
         # Weather
         self.ambient_u = None
-        self.ambient_wd = None
 
         # Turbine
         self.u_eff = None
@@ -102,6 +101,7 @@ class OffshoreMaintenanceEnv(gym.Env):
 
         farm_spaces = {
             "month": spaces.Box(low=-1, high=1, shape=(2,), dtype=np.float32),
+            "progress_ratio": spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
         }
         if self.config.include_weather_window:
             farm_spaces["weather_window_prob"] = spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
@@ -129,7 +129,7 @@ class OffshoreMaintenanceEnv(gym.Env):
         total_samples = samples_per_month * 12
         
         for month in range(1, 13):
-            ambient_u_arr, ambient_wd_arr = self.wind_climate.sample(
+            ambient_u_arr = self.wind_climate.sample(
                 month=month, rng=self.rng, size=samples_per_month
             )
             
@@ -181,8 +181,13 @@ class OffshoreMaintenanceEnv(gym.Env):
         """
         month = cyclic_encode(self.current_month - 1, period=12)
         protection_remaining_norm = (self.protection_remaining / self.config.max_protection_duration)
+        
+        max_months = self.config.max_simulation_years * 12
+        progress = min(1.0, float(self.elapsed_month) / max_months)
+
         farm_obs = {
             "month": month,
+            "progress_ratio": np.array([progress], dtype=np.float32),
         }
         if self.config.include_weather_window:
             current_wind_speed = self.ambient_u if self.ambient_u is not None else 0.0
@@ -275,7 +280,7 @@ class OffshoreMaintenanceEnv(gym.Env):
         else:
             self.HI = self.config.get_initial_hi(self.n_turbines).astype(np.float64)
 
-        self.ambient_u, self.ambient_wd = self.wind_climate.sample(
+        self.ambient_u = self.wind_climate.sample(
             month=self.current_month,
             rng=self.rng
         )
@@ -359,7 +364,7 @@ class OffshoreMaintenanceEnv(gym.Env):
             n_intervals = int(duration_minutes / 10.0)
             n_slices = getattr(self.config, "wind_time_slices_per_month", 30)
 
-            ambient_u_arr, ambient_wd_arr = self.wind_climate.sample(
+            ambient_u_arr = self.wind_climate.sample(
                 month=self.current_month,
                 rng=self.rng,
                 size=n_slices
@@ -367,7 +372,6 @@ class OffshoreMaintenanceEnv(gym.Env):
 
             # We save one arbitrarily to log the state
             self.ambient_u = float(ambient_u_arr[-1])
-            self.ambient_wd = float(ambient_wd_arr[-1])
 
             u_eff = np.tile(ambient_u_arr, (self.n_turbines, 1)).astype(np.float32)
             ti_eff = np.full_like(u_eff, 0.10)
@@ -431,7 +435,6 @@ class OffshoreMaintenanceEnv(gym.Env):
                     HI=self.HI.copy(),
                     power=self.power,
                     ambient_u=self.ambient_u,
-                    ambient_wd=self.ambient_wd,
                     u_eff=self.u_eff,
                     ti_eff=self.ti_eff,
                     repair_params=self.repair_params,
