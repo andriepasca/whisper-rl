@@ -71,17 +71,18 @@ class WindClimate:
                 probability / probability_sum
             )
 
-    def sample(self, month, rng):
+    def sample(self, month, rng, size=None):
         """
         Stochastically samples ambient wind speed and direction for a given month.
 
         Args:
             month (int): The current month (1-12) used to select Weibull parameters.
             rng (np.random.Generator): Random number generator instance.
+            size (Optional[int]): Number of samples to draw. If None, returns scalars.
 
         Returns:
-            tuple[float, float]: A tuple containing the sampled ambient wind speed
-                                 and wind direction.
+            If size is None, returns (float, float) for (wind speed, direction).
+            If size is not None, returns (np.ndarray, np.ndarray) of shape (size,).
         """
 
         # --------------------------------------------------
@@ -92,25 +93,38 @@ class WindClimate:
         k = weibull["k"]
         c = weibull["c"]
 
-        while True:
+        if size is None:
+            while True:
+                ambient_u = c * rng.weibull(k)
+                if 3.0 <= ambient_u <= 25.0:
+                    break
 
-            ambient_u = c * rng.weibull(k)
+            ambient_wd = rng.choice(
+                self.config.wind_direction,
+                p=self.wind_direction_probability,
+            )
 
-            if 3.0 <= ambient_u <= 25.0:
-                break
+            return float(ambient_u), float(ambient_wd)
+        else:
+            ambient_u = np.zeros(size)
+            needed = np.ones(size, dtype=bool)
+            
+            while needed.any():
+                n_needed = needed.sum()
+                u_samples = c * rng.weibull(k, size=n_needed)
+                valid = (u_samples >= 3.0) & (u_samples <= 25.0)
+                
+                valid_indices = np.where(needed)[0][valid]
+                ambient_u[valid_indices] = u_samples[valid]
+                needed[valid_indices] = False
 
-        # --------------------------------------------------
-        # Ambient wind direction
-        # --------------------------------------------------
-        ambient_wd = rng.choice(
-            self.config.wind_direction,
-            p=self.wind_direction_probability,
-        )
+            ambient_wd = rng.choice(
+                self.config.wind_direction,
+                p=self.wind_direction_probability,
+                size=size
+            )
 
-        return (
-            float(ambient_u),
-            float(ambient_wd),
-        )
+            return ambient_u, ambient_wd
 
 @dataclass
 class TransitionResult:

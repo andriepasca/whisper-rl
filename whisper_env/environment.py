@@ -54,6 +54,9 @@ class OffshoreMaintenanceEnv(gym.Env):
         self.n_turbines = self.spatial_grouping_objective.n_turbines
         self.rng = np.random.default_rng(config.seed)
 
+        self.power_curve_u = np.array([0.0, 3.0, 11.4, 25.0, 30.0], dtype=np.float32)
+        self.power_curve_p = np.array([0.0, 0.0, 5000.0, 5000.0, 0.0], dtype=np.float32)
+
         if self.damage_solver.config.del_flap_ref is None or self.damage_solver.config.del_edge_ref is None:
             self._calibrate_del_refs()
 
@@ -126,15 +129,9 @@ class OffshoreMaintenanceEnv(gym.Env):
         total_samples = samples_per_month * 12
         
         for month in range(1, 13):
-            ambient_u_list = []
-            ambient_wd_list = []
-            for _ in range(samples_per_month):
-                u, wd = self.wind_climate.sample(month=month, rng=self.rng)
-                ambient_u_list.append(u)
-                ambient_wd_list.append(wd)
-                
-            ambient_u_arr = np.array(ambient_u_list)
-            ambient_wd_arr = np.array(ambient_wd_list)
+            ambient_u_arr, ambient_wd_arr = self.wind_climate.sample(
+                month=month, rng=self.rng, size=samples_per_month
+            )
             
             u_eff_base = np.tile(ambient_u_arr, (self.n_turbines, 1)).astype(np.float32)
             ti_eff_base = np.full_like(u_eff_base, 0.10)
@@ -291,7 +288,7 @@ class OffshoreMaintenanceEnv(gym.Env):
 
         u_eff = np.tile([self.ambient_u], (self.n_turbines, 1)).astype(np.float32)
         ti_eff = np.full_like(u_eff, 0.10)
-        power_kw = np.interp(u_eff, [0.0, 3.0, 11.4, 25.0, 30.0], [0.0, 0.0, 5000.0, 5000.0, 0.0])
+        power_kw = np.interp(u_eff, self.power_curve_u, self.power_curve_p)
         power = power_kw / 1000.0
         
         self.u_eff = u_eff[:, -1] if u_eff.ndim > 1 else u_eff
@@ -362,19 +359,11 @@ class OffshoreMaintenanceEnv(gym.Env):
             n_intervals = int(duration_minutes / 10.0)
             n_slices = getattr(self.config, "wind_time_slices_per_month", 30)
 
-            ambient_u_list = []
-            ambient_wd_list = []
-
-            for _ in range(n_slices):
-                ambient_u, ambient_wd = self.wind_climate.sample(
-                    month=self.current_month,
-                    rng=self.rng
-                )
-                ambient_u_list.append(ambient_u)
-                ambient_wd_list.append(ambient_wd)
-
-            ambient_u_arr = np.array(ambient_u_list)
-            ambient_wd_arr = np.array(ambient_wd_list)
+            ambient_u_arr, ambient_wd_arr = self.wind_climate.sample(
+                month=self.current_month,
+                rng=self.rng,
+                size=n_slices
+            )
 
             # We save one arbitrarily to log the state
             self.ambient_u = float(ambient_u_arr[-1])
@@ -382,7 +371,7 @@ class OffshoreMaintenanceEnv(gym.Env):
 
             u_eff = np.tile(ambient_u_arr, (self.n_turbines, 1)).astype(np.float32)
             ti_eff = np.full_like(u_eff, 0.10)
-            power_kw = np.interp(u_eff, [0.0, 3.0, 11.4, 25.0, 30.0], [0.0, 0.0, 5000.0, 5000.0, 0.0])
+            power_kw = np.interp(u_eff, self.power_curve_u, self.power_curve_p)
             power = power_kw / 1000.0  # MW
 
             # Damage rate calculation using float64 to prevent precision loss
