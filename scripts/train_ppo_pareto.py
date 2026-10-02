@@ -26,6 +26,7 @@ class FlattenDictWrapper(gym.ObservationWrapper):
         super().__init__(env)
         self.observation_space = spaces.Dict({
             "farm_month": env.observation_space["farm"]["month"],
+            "farm_progress_ratio": env.observation_space["farm"]["progress_ratio"],
             "turbines_HI": env.observation_space["turbines"]["HI"],
             "turbines_protection_remaining": env.observation_space["turbines"]["protection_remaining"]
         })
@@ -33,6 +34,7 @@ class FlattenDictWrapper(gym.ObservationWrapper):
     def observation(self, obs):
         return {
             "farm_month": obs["farm"]["month"],
+            "farm_progress_ratio": obs["farm"]["progress_ratio"],
             "turbines_HI": obs["turbines"]["HI"],
             "turbines_protection_remaining": obs["turbines"]["protection_remaining"]
         }
@@ -70,7 +72,8 @@ def train_pareto_agents(args):
         )
 
         config = dataclasses.replace(config, 
-            damage_solver=DamageSolver(damage_solver_config)
+            damage_solver=DamageSolver(damage_solver_config),
+            enable_logging=False
         )
 
         env = OffshoreMaintenanceEnv(config)
