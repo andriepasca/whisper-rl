@@ -19,7 +19,8 @@ dependencies = [
     "matplotlib",
     "gymnasium",
     "stable-baselines3[extra]>=2.0.0",
-    "seaborn"
+    "seaborn",
+    "tensorboard"
 ]
 
 [tool.setuptools.packages.find]
