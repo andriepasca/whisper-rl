@@ -243,6 +243,8 @@ class SpatialGroupingObjective:
             from .config import LayoutConfig
             layout_config = LayoutConfig()
 
+        self.D = getattr(layout_config, "D", 126.0)
+
         self.x = np.asarray(layout_config.x, dtype=float)
         self.y = np.asarray(layout_config.y, dtype=float)
 
@@ -268,8 +270,8 @@ class SpatialGroupingObjective:
             maintenance_indices (List[int]): Indices of turbines undergoing maintenance.
 
         Returns:
-            float: The mean pairwise distance between selected turbines, or 0.0 if
-                   less than 2 turbines are selected.
+            float: The mean pairwise distance between selected turbines plus a base mobilization distance,
+                   or 0.0 if no turbines are selected.
         """
         indices = np.asarray(
             maintenance_indices,
@@ -281,7 +283,7 @@ class SpatialGroupingObjective:
                 "maintenance_indices must be one-dimensional."
             )
 
-        if len(indices) < 2:
+        if len(indices) == 0:
             return 0.0
 
         if np.any(indices < 0) or np.any(indices >= self.n_turbines):
@@ -293,6 +295,11 @@ class SpatialGroupingObjective:
             raise ValueError(
                 "maintenance_indices must contain unique turbine indices."
             )
+
+        base_distance = self.D * 2.0
+
+        if len(indices) == 1:
+            return float(base_distance)
 
         selected_x = self.x[indices]
         selected_y = self.y[indices]
@@ -307,7 +314,7 @@ class SpatialGroupingObjective:
             k=1,
         )
 
-        return float(np.mean(distances[upper]))
+        return float(base_distance + np.mean(distances[upper]))
 
 @dataclass(frozen=True)
 class RewardResult:
