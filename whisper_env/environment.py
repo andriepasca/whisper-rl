@@ -4,6 +4,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from .config import EnvironmentConfig
 from .utils import WeatherOracle
+from .maintenance import MaintenanceResult, VectorizedMaintenanceResult
 
 def cyclic_encode(x, period):
     """
@@ -314,28 +315,30 @@ class OffshoreMaintenanceEnv(gym.Env):
         if np.any((action != 0) & (action != 1)):
             raise ValueError("Action values must be 0 or 1.")
 
-        maintenance_results = [
-            self.maintenance_policy.solve(
-                hi=self.HI[i],
-                action=action[i],
-                protection_remaining=self.protection_remaining[i],
-            )
-            for i in range(self.n_turbines)
-        ]
+        # Vectorized Maintenance Policy Evaluation across all turbines
+        maint_vec = self.maintenance_policy.solve(
+            hi=self.HI,
+            action=action,
+            protection_remaining=self.protection_remaining,
+        )
 
-        for i, maintenance in enumerate(maintenance_results):
-            maintenance_type = maintenance.maintenance_type
-            if maintenance_type is None:
-                continue
-            if maintenance_type.is_replacement:
-                self.replacement_count[i] += 1
-            else:
-                self.repair_count[i] += 1
+        if isinstance(maint_vec, VectorizedMaintenanceResult):
+            has_maint = maint_vec.maintenance_types != None
+            if np.any(has_maint):
+                is_repl = maint_vec.is_replacement & has_maint
+                self.replacement_count += is_repl.astype(np.int32)
+                self.repair_count += (has_maint & ~is_repl).astype(np.int32)
+            maint_types_arr = maint_vec.maintenance_types
+        else:
+            if maint_vec.maintenance_type is not None:
+                if maint_vec.maintenance_type.is_replacement:
+                    self.replacement_count += 1
+                else:
+                    self.repair_count += 1
+            maint_types_arr = np.full(self.n_turbines, maint_vec.maintenance_type, dtype=object)
 
         interval_damage = 0.0
         interval_damage_burden = 0.0
-        # Reporting-only records (never read by observations/reward/training):
-        # per-month farm power (MW, incl. HI<=0 availability) and calendar month for this interval.
         self.interval_power_mw = []
         self.interval_calendar_months = []
 
@@ -344,79 +347,99 @@ class OffshoreMaintenanceEnv(gym.Env):
 
         hours_per_month = self.config.hours_per_month
         duration_minutes = hours_per_month * 60.0
+        n_intervals = int(duration_minutes / 10.0)
+        n_slices = getattr(self.config, "wind_time_slices_per_month", 30)
+
+        # Vectorized wind sampling across decision_interval months into a single array call
+        months_list = [((self.current_month - 1 + m) % 12) + 1 for m in range(self.decision_interval)]
+        ambient_u_2d = self.wind_climate.sample(
+            month=months_list,
+            rng=self.rng,
+            size=n_slices
+        )
+
+        m_coef = self.damage_solver.config.m_coef
+        del_flap_ref = self.damage_solver.config.del_flap_ref
+        del_edge_ref = self.damage_solver.config.del_edge_ref
+        n_ref = self.damage_solver.config.design_life_years * 365 * 24 * 60 / 10
+        ti_slices = np.full(n_slices, 0.10, dtype=np.float32)
+
+        enable_logging = getattr(self.config, 'enable_logging', False)
 
         for simulation_month in range(self.decision_interval):
-
-            # Use exact number of 10-minute intervals in a month to compute true stochastic trajectory
-            n_intervals = int(duration_minutes / 10.0)
-            n_slices = getattr(self.config, "wind_time_slices_per_month", 30)
-
-            ambient_u_arr = self.wind_climate.sample(
-                month=self.current_month,
-                rng=self.rng,
-                size=n_slices
-            )
-
-            # We save one arbitrarily to log the state
+            ambient_u_arr = ambient_u_2d[simulation_month]
             self.ambient_u = float(ambient_u_arr[-1])
 
-            u_eff = np.tile(ambient_u_arr, (self.n_turbines, 1)).astype(np.float32)
-            ti_eff = np.full_like(u_eff, 0.10)
-            power_kw = np.interp(u_eff, self.power_curve_u, self.power_curve_p)
-            power = power_kw / 1000.0  # MW
+            if self.wake_solver is None:
+                u_eff_slice = ambient_u_arr.astype(np.float32)
+                del_preds = self.damage_solver.predict_del(u_eff_slice, ti_slices)
+                del_flap = del_preds["del_flap"].astype(np.float64)
+                del_edge = del_preds["del_edge"].astype(np.float64)
 
-            # Damage rate calculation using float64 to prevent precision loss
-            del_preds = self.damage_solver.predict_del(u_eff, ti_eff)
-            del_flap = del_preds["del_flap"].astype(np.float64)
-            del_edge = del_preds["del_edge"].astype(np.float64)
-            m_coef = self.damage_solver.config.m_coef
-            n_ref = self.damage_solver.config.design_life_years * 365 * 24 * 60 / 10
+                damage_flap_10min = ((del_flap / del_flap_ref) ** m_coef) / n_ref
+                damage_edge_10min = ((del_edge / del_edge_ref) ** m_coef) / n_ref
+                damage_10min = (damage_flap_10min + damage_edge_10min) / 2
 
-            damage_flap_10min = ((del_flap / self.damage_solver.config.del_flap_ref) ** m_coef) / n_ref
-            damage_edge_10min = ((del_edge / self.damage_solver.config.del_edge_ref) ** m_coef) / n_ref
-            damage_10min = (damage_flap_10min + damage_edge_10min) / 2
+                expected_damage_10min_scalar = float(np.mean(damage_10min))
+                stochastic_monthly_damage_val = np.float32(expected_damage_10min_scalar * n_intervals)
 
-            # Compute expected 10-min damage using slices and scale to full month
-            expected_damage_10min = np.mean(damage_10min, axis=1)
-            stochastic_monthly_damage = (expected_damage_10min * n_intervals).astype(np.float32)
-            stochastic_monthly_power = np.mean(power, axis=1)
+                power_kw = np.interp(u_eff_slice, self.power_curve_u, self.power_curve_p)
+                power_mw_slice = power_kw / 1000.0
+                stochastic_monthly_power_val = float(np.mean(power_mw_slice))
 
-            # Fix dead turbine exploitation
-            availability = np.ones(self.n_turbines, dtype=np.float32)
-            for idx in range(self.n_turbines):
-                if self.HI[idx] <= 0.0:
-                    availability[idx] = 0.0
-            stochastic_monthly_power = stochastic_monthly_power * availability
+                availability = (self.HI > 0.0).astype(np.float32)
+                stochastic_monthly_power = stochastic_monthly_power_val * availability
 
-            self.u_eff = u_eff[:, -1]
-            self.ti_eff = ti_eff[:, -1]
-            self.power = stochastic_monthly_power
-            self.interval_power_mw.append(stochastic_monthly_power.copy())
+                self.u_eff = np.full(self.n_turbines, self.ambient_u, dtype=np.float32)
+                self.ti_eff = np.full(self.n_turbines, 0.10, dtype=np.float32)
+                self.power = stochastic_monthly_power
+                self.delta_damage = np.full(self.n_turbines, stochastic_monthly_damage_val, dtype=np.float32)
+            else:
+                u_eff = np.tile(ambient_u_arr, (self.n_turbines, 1)).astype(np.float32)
+                ti_eff = np.full_like(u_eff, 0.10)
+                power_kw = np.interp(u_eff, self.power_curve_u, self.power_curve_p)
+                power = power_kw / 1000.0
+
+                del_preds = self.damage_solver.predict_del(u_eff, ti_eff)
+                del_flap = del_preds["del_flap"].astype(np.float64)
+                del_edge = del_preds["del_edge"].astype(np.float64)
+
+                damage_flap_10min = ((del_flap / del_flap_ref) ** m_coef) / n_ref
+                damage_edge_10min = ((del_edge / del_edge_ref) ** m_coef) / n_ref
+                damage_10min = (damage_flap_10min + damage_edge_10min) / 2
+
+                expected_damage_10min = np.mean(damage_10min, axis=1)
+                stochastic_monthly_damage = (expected_damage_10min * n_intervals).astype(np.float32)
+                stochastic_monthly_power = np.mean(power, axis=1)
+
+                availability = (self.HI > 0.0).astype(np.float32)
+                stochastic_monthly_power = stochastic_monthly_power * availability
+
+                self.u_eff = u_eff[:, -1]
+                self.ti_eff = ti_eff[:, -1]
+                self.power = stochastic_monthly_power
+                self.delta_damage = stochastic_monthly_damage
+
+            self.interval_power_mw.append(self.power)
             self.interval_calendar_months.append(int(self.current_month))
+            interval_damage += float(np.sum(self.delta_damage))
 
-            self.delta_damage = stochastic_monthly_damage
-            interval_damage += np.sum(self.delta_damage)
+            maint_arg = maint_vec if simulation_month == 0 else None
+            transition_res = self.transition_model.solve(
+                hi=self.HI,
+                delta_damage=self.delta_damage,
+                damage_multiplier=self.damage_multiplier,
+                protection_remaining=self.protection_remaining,
+                maintenance=maint_arg,
+            )
 
-            for i in range(self.n_turbines):
-                maintenance = None
-                if simulation_month == 0:
-                    maintenance = maintenance_results[i]
+            self.HI = transition_res.HI
+            self.damage_multiplier = transition_res.damage_multiplier
+            self.protection_remaining = transition_res.protection_remaining
 
-                transition = self.transition_model.solve(
-                    hi=self.HI[i],
-                    delta_damage=self.delta_damage[i],
-                    damage_multiplier=self.damage_multiplier[i],
-                    protection_remaining=self.protection_remaining[i],
-                    maintenance=maintenance,
-                )
+            interval_damage_burden += float(np.sum(1.0 - self.HI))
 
-                self.HI[i] = transition.HI
-                self.damage_multiplier[i] = transition.damage_multiplier
-                self.protection_remaining[i] = transition.protection_remaining
-
-            interval_damage_burden += np.sum(1.0 - self.HI)
-
-            if getattr(self.config, 'enable_logging', False):
+            if enable_logging:
                 self.logger.log_state(
                     year=self.current_year,
                     month=self.current_month,
@@ -442,7 +465,7 @@ class OffshoreMaintenanceEnv(gym.Env):
                 truncated = True
                 break
 
-        maintenance_indices = [i for i, result in enumerate(maintenance_results) if result.maintenance_type is not None]
+        maintenance_indices = np.where(maint_types_arr != None)[0]
         spatial_grouping = self.spatial_grouping_objective.solve(maintenance_indices)
 
         metrics = {
@@ -452,14 +475,27 @@ class OffshoreMaintenanceEnv(gym.Env):
 
         reward_result = self.reward_model.solve(metrics)
 
-        if getattr(self.config, 'enable_logging', False):
+        if enable_logging:
+            if isinstance(maint_vec, VectorizedMaintenanceResult):
+                legacy_maint_results = [
+                    MaintenanceResult(
+                        maintenance_type=maint_vec.maintenance_types[i],
+                        downtime_hours=maint_vec.downtime_hours[i],
+                        damage_multiplier=maint_vec.damage_multiplier[i],
+                        protection_duration=maint_vec.protection_duration[i],
+                    )
+                    for i in range(self.n_turbines)
+                ]
+            else:
+                legacy_maint_results = [maint_vec] * self.n_turbines
+
             self.logger.log_decision(
                 reward=reward_result.reward,
                 objectives=reward_result.objectives,
                 interval_damage_burden=interval_damage_burden,
                 spatial_grouping=spatial_grouping,
                 interval_damage=interval_damage,
-                maintenance_results=maintenance_results,
+                maintenance_results=legacy_maint_results,
                 action=action,
                 protection_remaining=self.protection_remaining,
             )

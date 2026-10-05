@@ -1,21 +1,29 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
+import numpy as np
 from .config import MaintenanceType, MaintenanceConfig
 
 @dataclass
 class MaintenanceResult:
     """
-    Result of MaintenancePolicy.
+    Result of MaintenancePolicy for a single turbine.
     """
     maintenance_type: Optional[MaintenanceType]
-
     downtime_hours: float
-
-    # Applied to future fatigue damage.
     damage_multiplier: float
-
-    # Remaining duration of damage protection.
     protection_duration: int
+
+
+@dataclass
+class VectorizedMaintenanceResult:
+    """
+    Vectorized result of MaintenancePolicy across multiple turbines.
+    """
+    maintenance_types: np.ndarray    # dtype=object, array of MaintenanceType or None
+    downtime_hours: np.ndarray       # dtype=np.float64
+    damage_multiplier: np.ndarray    # dtype=np.float64
+    protection_duration: np.ndarray  # dtype=np.int32
+    is_replacement: np.ndarray       # dtype=bool
 
 
 class MaintenancePolicy:
@@ -34,73 +42,96 @@ class MaintenancePolicy:
 
     def solve(
         self,
-        hi: float,
-        action: int,
-        protection_remaining: int,
-    ) -> MaintenanceResult:
+        hi: Union[float, np.ndarray],
+        action: Union[int, np.ndarray],
+        protection_remaining: Union[int, np.ndarray],
+    ) -> Union[MaintenanceResult, VectorizedMaintenanceResult]:
         """
-        Determines the outcome of a maintenance decision.
+        Determines the outcome of maintenance decision(s).
 
         Args:
-            hi (float): The current health index of the turbine.
-            action (int): The chosen action (0 for no intervention, 1 for intervention).
-            protection_remaining (int): Remaining months of protection from previous maintenance.
+            hi (Union[float, np.ndarray]): The current health index of turbine(s).
+            action (Union[int, np.ndarray]): The chosen action(s) (0 for no intervention, 1 for intervention).
+            protection_remaining (Union[int, np.ndarray]): Remaining months of protection.
 
         Returns:
-            MaintenanceResult: The result of the applied or rejected maintenance.
+            Union[MaintenanceResult, VectorizedMaintenanceResult]: The result of applied or rejected maintenance.
         """
+        if np.ndim(action) == 0 and not isinstance(action, np.ndarray):
+            action_int = int(action)
+            hi_val = float(hi)
+            prot_val = int(protection_remaining)
 
-        if action not in (0, 1):
-            raise ValueError(
-                f"Unknown action: {action}. "
-                "Expected 0 (No intervention) or 1 (Intervention)."
+            if action_int not in (0, 1):
+                raise ValueError(
+                    f"Unknown action: {action_int}. "
+                    "Expected 0 (No intervention) or 1 (Intervention)."
+                )
+
+            if not (0.0 <= hi_val <= 1.0):
+                raise ValueError(
+                    f"Health Index must be within [0, 1]. "
+                    f"Received {hi_val}."
+                )
+
+            if action_int == 0 or prot_val > 0:
+                return self._no_maintenance()
+
+            maintenance = self._select_type(hi_val)
+
+            if maintenance is None:
+                return self._no_maintenance()
+
+            return MaintenanceResult(
+                maintenance_type=maintenance,
+                downtime_hours=maintenance.downtime_hours,
+                damage_multiplier=maintenance.damage_multiplier,
+                protection_duration=maintenance.duration_months,
             )
 
-        if not (0.0 <= hi <= 1.0):
-            raise ValueError(
-                f"Health Index must be within [0, 1]. "
-                f"Received {hi}."
-            )
+        # Vectorized path for arrays across all turbines
+        hi_arr = np.asarray(hi, dtype=np.float64)
+        action_arr = np.asarray(action, dtype=np.int32)
+        prot_arr = np.asarray(protection_remaining, dtype=np.int32)
 
-        # ----------------------------------------------------------
-        # No intervention requested
-        # ----------------------------------------------------------
-        if action == 0:
-            return self._no_maintenance()
+        if np.any((action_arr != 0) & (action_arr != 1)):
+            raise ValueError("Action values must be 0 or 1.")
 
-        # ----------------------------------------------------------
-        # Select maintenance based on HI
-        # ----------------------------------------------------------
-        maintenance = self._select_type(hi)
+        n_turbines = len(hi_arr)
+        maint_types = np.full(n_turbines, None, dtype=object)
+        downtime_hours = np.zeros(n_turbines, dtype=np.float64)
+        damage_multiplier = np.ones(n_turbines, dtype=np.float64)
+        protection_duration = np.zeros(n_turbines, dtype=np.int32)
+        is_replacement = np.zeros(n_turbines, dtype=bool)
 
-        # ----------------------------------------------------------
-        # No maintenance type is applicable
-        # ----------------------------------------------------------
-        if maintenance is None:
-            return self._no_maintenance()
+        eligible = (action_arr == 1) & (prot_arr == 0)
 
-        # ----------------------------------------------------------
-        # Protection constraint
-        # ----------------------------------------------------------
-        if protection_remaining > 0:
-            return self._no_maintenance()
+        if np.any(eligible):
+            sorted_types = sorted(self.config.maintenance_types, key=lambda m: m.threshold)
+            unassigned = eligible.copy()
 
-        # ----------------------------------------------------------
-        # Maintenance approved
-        # ----------------------------------------------------------
-        return MaintenanceResult(
-            maintenance_type=maintenance,
+            for m in sorted_types:
+                match = unassigned & (hi_arr <= m.threshold)
+                if np.any(match):
+                    maint_types[match] = m
+                    downtime_hours[match] = m.downtime_hours
+                    damage_multiplier[match] = m.damage_multiplier
+                    protection_duration[match] = m.duration_months
+                    is_replacement[match] = m.is_replacement
+                    unassigned[match] = False
 
-            downtime_hours=maintenance.downtime_hours,
-
-            damage_multiplier=maintenance.damage_multiplier,
-            protection_duration=maintenance.duration_months,
+        return VectorizedMaintenanceResult(
+            maintenance_types=maint_types,
+            downtime_hours=downtime_hours,
+            damage_multiplier=damage_multiplier,
+            protection_duration=protection_duration,
+            is_replacement=is_replacement,
         )
 
     def _select_type(
         self,
         hi: float,
-    ) -> MaintenanceType | None:
+    ) -> Optional[MaintenanceType]:
 
         applicable = [
             maintenance
@@ -119,9 +150,7 @@ class MaintenancePolicy:
     def _no_maintenance(self) -> MaintenanceResult:
         return MaintenanceResult(
             maintenance_type=None,
-
             downtime_hours=0.0,
-
             damage_multiplier=1.0,
             protection_duration=0,
         )

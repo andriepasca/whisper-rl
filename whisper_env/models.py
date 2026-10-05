@@ -25,21 +25,33 @@ class WindClimate:
 
     def sample(self, month, rng, size=None):
         """
-        Stochastically samples ambient wind speed for a given month.
+        Stochastically samples ambient wind speed for a given month or sequence of months.
 
         Args:
-            month (int): The current month (1-12) used to select Weibull parameters.
+            month (Union[int, list, tuple, np.ndarray]): Month (1-12) or sequence of months.
             rng (np.random.Generator): Random number generator instance.
-            size (Optional[int]): Number of samples to draw. If None, returns scalars.
+            size (Optional[Union[int, tuple]]): Number of samples to draw. If None, returns scalars.
 
         Returns:
+            If month is a sequence, returns array of shape (len(month), size) or (len(month),).
             If size is None, returns float for wind speed.
             If size is not None, returns np.ndarray of shape (size,).
         """
+        if isinstance(month, (list, tuple, np.ndarray)):
+            months = list(month)
+            if size is None or isinstance(size, int):
+                n_slices = size if size is not None else 1
+                result = np.zeros((len(months), n_slices), dtype=np.float64)
+                for i, m in enumerate(months):
+                    result[i] = self.sample(m, rng, size=n_slices)
+                return result if size is not None else result.squeeze(-1)
+            elif isinstance(size, tuple) and len(size) == 2:
+                n_slices = size[1]
+                result = np.zeros((len(months), n_slices), dtype=np.float64)
+                for i, m in enumerate(months):
+                    result[i] = self.sample(m, rng, size=n_slices)
+                return result
 
-        # --------------------------------------------------
-        # Ambient wind speed
-        # --------------------------------------------------
         weibull = self.config.monthly_weibull[month]
 
         k = weibull["k"]
@@ -55,12 +67,12 @@ class WindClimate:
         else:
             ambient_u = np.zeros(size)
             needed = np.ones(size, dtype=bool)
-            
+
             while needed.any():
                 n_needed = needed.sum()
                 u_samples = c * rng.weibull(k, size=n_needed)
                 valid = (u_samples >= 3.0) & (u_samples <= 25.0)
-                
+
                 valid_indices = np.where(needed)[0][valid]
                 ambient_u[valid_indices] = u_samples[valid]
                 needed[valid_indices] = False
@@ -69,9 +81,9 @@ class WindClimate:
 
 @dataclass
 class TransitionResult:
-    HI: float
-    damage_multiplier: float
-    protection_remaining: int
+    HI: Any
+    damage_multiplier: Any
+    protection_remaining: Any
 
 
 class TransitionModel:
@@ -84,79 +96,94 @@ class TransitionModel:
 
     def solve(
         self,
-        hi: float,
-        delta_damage: float,
-        damage_multiplier: float,
-        protection_remaining: int,
-        maintenance: Optional[MaintenanceResult] = None,
+        hi: Any,
+        delta_damage: Any,
+        damage_multiplier: Any,
+        protection_remaining: Any,
+        maintenance: Optional[Any] = None,
     ) -> TransitionResult:
         """
         Computes the next state of the turbine health index.
 
         Args:
-            hi (float): Current Health Index (0.0 to 1.0).
-            delta_damage (float): Accumulated fatigue damage in the current time step.
-            damage_multiplier (float): Current multiplier applied to damage.
-            protection_remaining (int): Remaining months of protection.
-            maintenance (Optional[MaintenanceResult]): Applied maintenance intervention.
+            hi (Any): Current Health Index (float or 1D array).
+            delta_damage (Any): Accumulated fatigue damage (float or 1D array).
+            damage_multiplier (Any): Current multiplier applied to damage (float or 1D array).
+            protection_remaining (Any): Remaining months of protection (int or 1D array).
+            maintenance (Optional[Any]): Applied maintenance intervention.
 
         Returns:
-            TransitionResult: The resulting health state of the turbine.
+            TransitionResult: The resulting health state of the turbine(s).
         """
+        if np.ndim(hi) == 0 and not isinstance(hi, np.ndarray):
+            hi_val = float(hi)
+            delta_damage_val = float(delta_damage)
+            damage_multiplier_val = float(damage_multiplier)
+            protection_remaining_val = int(protection_remaining)
 
-        # ----------------------------------------------------------
-        # Convert Health Index to degradation
-        # ----------------------------------------------------------
-        degradation_new = 1.0 - hi
+            degradation_new = 1.0 - hi_val
+            multiplier_new = damage_multiplier_val
+            protection_new = protection_remaining_val
 
-        multiplier_new = damage_multiplier
-        protection_new = protection_remaining
+            if (
+                maintenance is not None
+                and getattr(maintenance, "maintenance_type", None) is not None
+            ):
+                maintenance_type = maintenance.maintenance_type
+                if maintenance_type.is_replacement:
+                    degradation_new = 0.0
+                multiplier_new = maintenance_type.damage_multiplier
+                protection_new = maintenance_type.duration_months
 
-        # ----------------------------------------------------------
-        # Apply maintenance at beginning of month
-        # ----------------------------------------------------------
-        if (
-            maintenance is not None
-            and maintenance.maintenance_type is not None
-        ):
-            maintenance_type = maintenance.maintenance_type
+            degradation_new += multiplier_new * delta_damage_val
+            degradation_new = min(1.0, degradation_new)
 
-            # ------------------------------------------------------
-            # Replacement restores the blade completely
-            # ------------------------------------------------------
-            if maintenance_type.is_replacement:
-                degradation_new = 0.0
+            if protection_new > 0:
+                protection_new -= 1
+                if protection_new == 0:
+                    multiplier_new = 1.0
 
-            # ------------------------------------------------------
-            # Apply maintenance effect to future damage
-            # ------------------------------------------------------
-            multiplier_new = maintenance_type.damage_multiplier
-            protection_new = maintenance_type.duration_months
+            hi_new = 1.0 - degradation_new
+            return TransitionResult(
+                HI=hi_new,
+                damage_multiplier=multiplier_new,
+                protection_remaining=protection_new,
+            )
 
-        # ----------------------------------------------------------
-        # Monthly fatigue accumulation
-        # ----------------------------------------------------------
-        degradation_new += (
-            multiplier_new * delta_damage
-        )
+        # Vectorized path for 1D arrays
+        hi_arr = np.asarray(hi, dtype=np.float64)
+        delta_damage_arr = np.asarray(delta_damage, dtype=np.float64)
+        damage_multiplier_arr = np.asarray(damage_multiplier, dtype=np.float64)
+        protection_remaining_arr = np.asarray(protection_remaining, dtype=np.int32)
 
-        degradation_new = min(
-            1.0,
-            degradation_new,
-        )
+        degradation_new = 1.0 - hi_arr
+        multiplier_new = damage_multiplier_arr.copy()
+        protection_new = protection_remaining_arr.copy()
 
-        # ----------------------------------------------------------
-        # Update protection duration
-        # ----------------------------------------------------------
-        if protection_new > 0:
-            protection_new -= 1
+        if maintenance is not None:
+            from .maintenance import VectorizedMaintenanceResult
+            if isinstance(maintenance, VectorizedMaintenanceResult):
+                has_maint = maintenance.maintenance_types != None
+                if np.any(has_maint):
+                    is_repl = maintenance.is_replacement & has_maint
+                    degradation_new[is_repl] = 0.0
+                    multiplier_new[has_maint] = maintenance.damage_multiplier[has_maint]
+                    protection_new[has_maint] = maintenance.protection_duration[has_maint]
+            elif getattr(maintenance, "maintenance_type", None) is not None:
+                m_type = maintenance.maintenance_type
+                if m_type.is_replacement:
+                    degradation_new[:] = 0.0
+                multiplier_new[:] = m_type.damage_multiplier
+                protection_new[:] = m_type.duration_months
 
-            if protection_new == 0:
-                multiplier_new = 1.0
+        degradation_new = degradation_new + multiplier_new * delta_damage_arr
+        degradation_new = np.minimum(1.0, degradation_new)
 
-        # ----------------------------------------------------------
-        # Convert back to Health Index
-        # ----------------------------------------------------------
+        has_protection = protection_new > 0
+        protection_new = np.where(has_protection, protection_new - 1, protection_new)
+        expired = has_protection & (protection_new == 0)
+        multiplier_new = np.where(expired, 1.0, multiplier_new)
+
         hi_new = 1.0 - degradation_new
 
         return TransitionResult(
