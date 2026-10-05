@@ -9,6 +9,12 @@ from .config import (
     RewardConfig,
     EnvironmentConfig,
     get_default_config,
+    get_calibrated_del_refs,
+    DEFAULT_DEL_FLAP_REF,
+    DEFAULT_DEL_EDGE_REF,
+    DEFAULT_DESIGN_LIFE_YEARS,
+    DEFAULT_M_COEF,
+    make_fixed_damage_solver_config,
 )
 from .maintenance import MaintenanceResult, MaintenancePolicy
 from .physics import DamageSolver, EnergyResult, EnergySolver
@@ -35,6 +41,12 @@ __all__ = [
     "RewardConfig",
     "EnvironmentConfig",
     "get_default_config",
+    "get_calibrated_del_refs",
+    "DEFAULT_DEL_FLAP_REF",
+    "DEFAULT_DEL_EDGE_REF",
+    "DEFAULT_DESIGN_LIFE_YEARS",
+    "DEFAULT_M_COEF",
+    "make_fixed_damage_solver_config",
     "MaintenanceResult",
     "MaintenancePolicy",
     "DamageSolver",

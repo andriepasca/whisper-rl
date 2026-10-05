@@ -8,10 +8,10 @@ from stable_baselines3.common.env_util import make_vec_env
 from whisper_env import (
     get_default_config, 
     OffshoreMaintenanceEnv,
-    TurbineConfig,
     DamageSolverConfig,
     DamageSolver
 )
+from whisper_env.config import DEFAULT_DATA_DIR, make_fixed_damage_solver_config
 import gymnasium as gym
 from gymnasium import spaces
 import warnings
@@ -40,8 +40,13 @@ class FlattenDictWrapper(gym.ObservationWrapper):
         }
 
 def train_pareto_agents(args):
+    damage_csv = os.path.abspath(args.damage_csv)
+    if not os.path.isfile(damage_csv):
+        raise SystemExit(f"ERROR: damage CSV not found: {damage_csv} (check path; beware doubled '.csv.csv')")
+    print(f"Using damage CSV: {damage_csv}")
+
     os.makedirs("models", exist_ok=True)
-    weights = [0.0, 0.2, 0.5, 0.8, 1.0]
+    weights = args.weights
 
     # Set global seeds
     np.random.seed(args.seed)
@@ -51,25 +56,7 @@ def train_pareto_agents(args):
         print(f"\n--- Training agent with w_damage = {w} (Seed: {args.seed}) ---")
         config = get_default_config(w_damage=w, seed=args.seed)
 
-        turbine_config = TurbineConfig(
-            name="NREL 5-MW",
-            rotor_diameter=126.0,
-            hub_height=90.0,
-            csv_path=args.turbine_csv,
-            power_unit="kW"
-        )
-
-        damage_solver_config = DamageSolverConfig(
-            csv_path=args.damage_csv,
-            u_column="u",
-            ti_column="ti",
-            del_flap_column="del_flap",
-            del_edge_column="del_edge",
-            m_coef=10.0,
-            del_flap_ref=2803.716141751299,
-            del_edge_ref=5588.786717232858,
-            design_life_years=20
-        )
+        damage_solver_config = make_fixed_damage_solver_config(damage_csv)
 
         config = dataclasses.replace(config, 
             damage_solver=DamageSolver(damage_solver_config),
@@ -104,8 +91,8 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42, help="Random seed for training")
     parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate for PPO")
     parser.add_argument("--n_steps", type=int, default=2048, help="Number of steps to run for each environment per update")
-    parser.add_argument("--turbine-csv", type=str, required=True, help="Path to the turbine power curve data")
-    parser.add_argument("--damage-csv", type=str, required=True, help="Path to the response surface damage data")
+    parser.add_argument("--damage-csv", type=str, default=os.path.join(DEFAULT_DATA_DIR, 'response_surface_200.csv'), help="Path to the response surface damage data")
+    parser.add_argument("--weights", type=float, nargs='+', default=[0.0, 0.2, 0.5, 0.8, 1.0], help="List of scalarization weights w_damage to train")
     args = parser.parse_args()
 
     train_pareto_agents(args)

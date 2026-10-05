@@ -10,8 +10,8 @@ class WindClimate:
     """
     Models the stochastic ambient wind climate for the offshore environment.
 
-    This class handles the probability distributions of wind speed and direction,
-    providing methods for both random sampling and deterministic stratified sampling.
+    This class handles the Weibull distribution of ambient wind speed and provides
+    stochastic (i.i.d., truncated to [3, 25] m/s) sampling. Wind direction is not modeled.
     """
 
     def __init__(self, config: WindClimateConfig):
@@ -19,57 +19,9 @@ class WindClimate:
         Initializes the WindClimate model with the given configuration.
 
         Args:
-            config (WindClimateConfig): Configuration containing Weibull parameters and
-                                        wind direction probabilities.
+            config (WindClimateConfig): Configuration containing monthly Weibull parameters.
         """
         self.config = config
-
-        # --------------------------------------------------
-        # Wind-direction probability
-        # --------------------------------------------------
-        if config.wind_direction_probability is None:
-
-            # von Misses distribution
-            dominant_direction = 270.0
-            kappa = 2.0
-            theta = np.deg2rad(config.wind_direction)
-            mu = np.deg2rad(dominant_direction)
-            wind_direction_probability = np.exp(kappa * np.cos(theta - mu))
-            wind_direction_probability /= wind_direction_probability.sum()
-
-            self.wind_direction_probability = wind_direction_probability
-
-        else:
-
-            probability = np.asarray(
-                config.wind_direction_probability,
-                dtype=float,
-            )
-
-            if len(probability) != len(config.wind_direction):
-                raise ValueError(
-                    "wind_direction_probability must have "
-                    "the same length as wind_direction."
-                )
-
-            if np.any(probability < 0):
-                raise ValueError(
-                    "wind_direction_probability cannot contain "
-                    "negative values."
-                )
-
-            probability_sum = probability.sum()
-
-            if probability_sum <= 0:
-                raise ValueError(
-                    "wind_direction_probability must have "
-                    "a positive sum."
-                )
-
-            # Normalize automatically
-            self.wind_direction_probability = (
-                probability / probability_sum
-            )
 
     def sample(self, month, rng, size=None):
         """

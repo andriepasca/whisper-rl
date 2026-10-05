@@ -19,17 +19,12 @@ CLIMATE_PRESETS = {
     "taiwan_strait": {m: {"k": 1.8, "c": 11.0} for m in range(1, 13)}
 }
 
-def _default_wind_direction():
-    return np.arange(0.0, 360.0, 10.0)
-
 @dataclass
 class WindClimateConfig:
     """
-    Configuration for the ambient wind climate.
+    Configuration for the ambient wind climate (wind direction is not modeled).
     """
     monthly_weibull: dict = field(default_factory=dict)
-    wind_direction: np.ndarray = field(default_factory=_default_wind_direction)
-    wind_direction_probability: Optional[np.ndarray] = None
     climate_preset: str = "north_sea"
 
     def __post_init__(self):
@@ -51,6 +46,10 @@ class LayoutConfig:
     y: np.ndarray = field(default_factory=lambda: np.array(_get_default_layout().y))
 
 import os
+import threading
+
+_CACHED_DEL_REFS: Optional[tuple[float, float]] = None
+_CALIBRATION_LOCK = threading.Lock()
 
 DEFAULT_DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data'))
 
@@ -62,7 +61,6 @@ class TurbineConfig:
     name: str = "NREL 5-MW"
     rotor_diameter: float = 126.0
     hub_height: float = 90.0
-    csv_path: str = os.path.join(DEFAULT_DATA_DIR, "NREL_Reference_5MW_126.csv") # source from https://github.com/NatLabRockies/turbine-models
     power_unit: str = "kW"
 
 
@@ -81,6 +79,15 @@ class DamageSolverConfig:
     del_flap_ref: Optional[float] = None
     del_edge_ref: Optional[float] = None
     design_life_years: float = 20.0
+    allow_mock: bool = False  # opt-in only: random mock DEL data if CSV missing (invalid for science)
+
+# Fixed DEL references (provenance: to be confirmed by scripts/check_del_calibration.py;
+# calibrated for north_sea monthly Weibull, TI=0.10). Shared by training/eval/plot scripts.
+DEFAULT_DEL_FLAP_REF = 2803.716141751299
+DEFAULT_DEL_EDGE_REF = 5588.786717232858
+DEFAULT_DESIGN_LIFE_YEARS = 20.0
+DEFAULT_M_COEF = 10.0
+
 
 @dataclass
 class MaintenanceType:
@@ -251,6 +258,102 @@ class EnvironmentConfig:
             )
         return hi.copy()
 
+
+def _perform_del_calibration(config: Any = None) -> tuple[float, float]:
+    """
+    Auto-calibrates the DEL reference values based on 100000 Monte Carlo samples per month.
+    """
+    from .models import WindClimate
+    from .physics import DamageSolver
+
+    if isinstance(config, EnvironmentConfig):
+        wind_climate = config.wind_climate
+        damage_solver = config.damage_solver
+        m_coef = damage_solver.config.m_coef
+        seed = getattr(config, "seed", 42)
+    elif isinstance(config, DamageSolverConfig):
+        wind_climate = WindClimate(WindClimateConfig())
+        damage_solver = DamageSolver(config)
+        m_coef = config.m_coef
+        seed = 42
+    elif hasattr(config, "damage_solver") and hasattr(config, "wind_climate"):
+        wind_climate = config.wind_climate
+        damage_solver = config.damage_solver
+        m_coef = damage_solver.config.m_coef
+        seed = getattr(config, "seed", 42)
+    else:
+        wind_climate = WindClimate(WindClimateConfig())
+        damage_solver = DamageSolver(DamageSolverConfig())
+        m_coef = damage_solver.config.m_coef
+        seed = 42
+
+    samples_per_month = 100000
+    del_flap_m_sum = 0.0
+    del_edge_m_sum = 0.0
+    total_samples = samples_per_month * 12
+    rng = np.random.default_rng(seed)
+
+    for month in range(1, 13):
+        ambient_u_arr = wind_climate.sample(
+            month=month, rng=rng, size=samples_per_month
+        )
+
+        u_eff = ambient_u_arr.astype(np.float32)
+        ti_eff = np.full_like(u_eff, 0.10)
+
+        del_preds = damage_solver.predict_del(u_eff, ti_eff)
+        del_flap = del_preds["del_flap"]
+        del_edge = del_preds["del_edge"]
+
+        del_flap_m_sum += np.sum(del_flap.astype(np.float64) ** m_coef)
+        del_edge_m_sum += np.sum(del_edge.astype(np.float64) ** m_coef)
+
+    expected_del_flap_m = del_flap_m_sum / total_samples
+    expected_del_edge_m = del_edge_m_sum / total_samples
+
+    calibrated_flap_ref = float(expected_del_flap_m ** (1.0 / m_coef))
+    calibrated_edge_ref = float(expected_del_edge_m ** (1.0 / m_coef))
+
+    return (calibrated_flap_ref, calibrated_edge_ref)
+
+
+def get_calibrated_del_refs(config: Any = None, force_recalibrate: bool = False) -> tuple[float, float]:
+    """
+    Returns (del_flap_ref, del_edge_ref), using a thread-safe once-only lazy cached calibration.
+    If _CACHED_DEL_REFS is None or force_recalibrate is True, performs calibration once and caches the result.
+    On all subsequent calls across any environment instantiations, returns cached values instantly.
+    """
+    global _CACHED_DEL_REFS
+    if _CACHED_DEL_REFS is not None and not force_recalibrate:
+        return _CACHED_DEL_REFS
+
+    with _CALIBRATION_LOCK:
+        if _CACHED_DEL_REFS is not None and not force_recalibrate:
+            return _CACHED_DEL_REFS
+
+        _CACHED_DEL_REFS = _perform_del_calibration(config)
+        return _CACHED_DEL_REFS
+
+
+def make_fixed_damage_solver_config(csv_path: Optional[str] = None, config: Any = None) -> DamageSolverConfig:
+    """DamageSolverConfig using dynamically calibrated DEL references (calibrated once and cached)."""
+    calib_config = config
+    if calib_config is None and csv_path is not None:
+        calib_config = DamageSolverConfig(csv_path=csv_path)
+
+    del_flap_ref, del_edge_ref = get_calibrated_del_refs(calib_config)
+
+    kwargs = {}
+    if csv_path is not None:
+        kwargs["csv_path"] = csv_path
+    return DamageSolverConfig(
+        m_coef=DEFAULT_M_COEF,
+        del_flap_ref=del_flap_ref,
+        del_edge_ref=del_edge_ref,
+        design_life_years=DEFAULT_DESIGN_LIFE_YEARS,
+        **kwargs,
+    )
+
 def get_default_config(
     n_turbines: int = 25,
     w_damage: float = 0.85,
@@ -277,10 +380,9 @@ def get_default_config(
     layout_config = LayoutConfig(x=np.array(layout.x), y=np.array(layout.y))
 
     # 2. Path Eradication
-    turbine_csv = os.path.join(data_dir, "NREL_Reference_5MW_126.csv")
     damage_csv = os.path.join(data_dir, "response_surface_200.csv")
 
-    turbine_config = TurbineConfig(csv_path=turbine_csv)
+    turbine_config = TurbineConfig()
 
     damage_solver_config = DamageSolverConfig(csv_path=damage_csv)
 

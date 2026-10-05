@@ -6,9 +6,9 @@ The WHISPER-RL framework relies on a mathematically grounded physics engine to s
 
 The accumulation of structural fatigue is modeled using the Palmgren-Miner linear damage hypothesis. Blade degradation is accumulated linearly over time, proportional to the wind loads and structural stress cycles.
 
-## Deterministic Stratified Sampling
+## Stochastic Wind Sampling
 
-To eliminate the bias introduced by Jensen's inequality when aggregating non-linear fatigue over varying wind conditions, WHISPER-RL uses deterministic joint-probability Stratified Sampling. This Quasi-Monte Carlo numerical scheme ($m \approx 10$) strictly avoids random sampling to guarantee mathematical stability and ensure that accumulated damage and power calculations remain deterministic and unbiased.
+For each simulated month, the environment draws `n_slices` (`wind_time_slices_per_month`, default 30) i.i.d. wind speeds from the month's Weibull distribution, truncated to [3, 25] m/s by rejection sampling, using the environment RNG (seeded via `reset(seed=...)`). The damage rate of each slice is evaluated through the response surface, the mean over slices estimates the expected 10-minute damage, and this is scaled to the whole month (and thus the decision interval). Damage is therefore stochastic, not deterministic; averaging over slices reduces, but does not eliminate, Jensen's-inequality sampling noise. Wind direction is not modeled: wake effects are neglected (PyWake was removed) and a fixed turbulence intensity of 0.10 is used.
 
 ## Leading Edge Protection (LEP) Repair Dynamics
 

@@ -10,6 +10,6 @@ The multi-objective formulation employs linear scalarization to balance blade de
 
 Vessel spatial routing compactness ($J_{spatial}$) is calculated using a Euclidean distance proxy between serviced turbines. This is a simplification that abstracts away realistic maritime pathfinding, wake-induced navigational constraints, and graph-based logistical routing limits.
 
-## Computational Trade-off of Numerical Stratification
+## Sampling Noise of Stochastic Wind Slices
 
-The use of a deterministic Stratified Sampling scheme (Quasi-Monte Carlo) ensures numerical stability and eliminates Jensen's inequality bias. However, this mathematical rigor comes at a computational cost, leading to slower step execution times compared to environments that use purely random sampling approximations.
+Damage is estimated from `n_slices` (default 30) i.i.d. random Weibull wind draws per month, so it carries Monte Carlo sampling noise; increasing `wind_time_slices_per_month` reduces it at higher compute cost. Wind direction is not modeled and wake effects are neglected.

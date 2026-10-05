@@ -22,8 +22,14 @@ class DamageSolver:
         import os
         if os.path.exists(self.config.csv_path):
             self.response_surface_df = pd.read_csv(self.config.csv_path)
+        elif not getattr(self.config, "allow_mock", False):
+            raise FileNotFoundError(
+                f"Damage response-surface CSV not found: '{self.config.csv_path}'. "
+                "Check the path (hint: a doubled '.csv.csv' extension is a common mistake). "
+                "Mock data is only available with DamageSolverConfig(allow_mock=True)."
+            )
         else:
-            print(f"Warning: Damage CSV {self.config.csv_path} not found. Using fallback mock data.")
+            print(f"WARNING: Damage CSV {self.config.csv_path} not found. allow_mock=True: using RANDOM MOCK data (not scientifically valid).")
             u_dummy = np.linspace(3, 25, 5)
             ti_dummy = np.linspace(0.05, 0.25, 5)
             U, TI = np.meshgrid(u_dummy, ti_dummy)

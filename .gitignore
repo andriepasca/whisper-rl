@@ -74,3 +74,9 @@ dmypy.json
 .pytype/
 cython_debug/
 baseline_validation.png
+
+# Output directories and benchmark artifacts
+results/*.csv
+plots/
+logs/
+models/

@@ -57,8 +57,15 @@ class OffshoreMaintenanceEnv(gym.Env):
         self.power_curve_u = np.array([0.0, 3.0, 11.4, 25.0, 30.0], dtype=np.float32)
         self.power_curve_p = np.array([0.0, 0.0, 5000.0, 5000.0, 0.0], dtype=np.float32)
 
-        if self.damage_solver.config.del_flap_ref is None or self.damage_solver.config.del_edge_ref is None:
+        _flap_none = self.damage_solver.config.del_flap_ref is None
+        _edge_none = self.damage_solver.config.del_edge_ref is None
+        if _flap_none and _edge_none:
             self._calibrate_del_refs()
+        elif _flap_none != _edge_none:
+            raise ValueError(
+                "DamageSolverConfig: del_flap_ref and del_edge_ref must both be set "
+                "(fixed) or both be None (auto-calibrate); got exactly one None."
+            )
 
         # Weather Oracle for window probability
         self.weather_oracle = None
@@ -70,6 +77,8 @@ class OffshoreMaintenanceEnv(gym.Env):
         self.u_eff = None
         self.ti_eff = None
         self.power = None
+        self.interval_power_mw = []
+        self.interval_calendar_months = []
 
         # Damage/Maintenance
         self.HI = None
@@ -120,36 +129,10 @@ class OffshoreMaintenanceEnv(gym.Env):
     def _calibrate_del_refs(self):
         """
         Auto-calibrates the DEL reference values based on 100000 Monte Carlo samples per month.
+        Uses cached calibration values if already computed via get_calibrated_del_refs.
         """
-        samples_per_month = 100000
-        m_coef = self.damage_solver.config.m_coef
-        
-        del_flap_m_sum = 0.0
-        del_edge_m_sum = 0.0
-        total_samples = samples_per_month * 12
-        
-        for month in range(1, 13):
-            ambient_u_arr = self.wind_climate.sample(
-                month=month, rng=self.rng, size=samples_per_month
-            )
-            
-            u_eff_base = np.tile(ambient_u_arr, (self.n_turbines, 1)).astype(np.float32)
-            ti_eff_base = np.full_like(u_eff_base, 0.10)
-            u_eff = u_eff_base[0, :]
-            ti_eff = ti_eff_base[0, :]
-            
-            del_preds = self.damage_solver.predict_del(u_eff, ti_eff)
-            del_flap = del_preds["del_flap"]
-            del_edge = del_preds["del_edge"]
-            
-            del_flap_m_sum += np.sum(del_flap.astype(np.float64) ** m_coef)
-            del_edge_m_sum += np.sum(del_edge.astype(np.float64) ** m_coef)
-            
-        expected_del_flap_m = del_flap_m_sum / total_samples
-        expected_del_edge_m = del_edge_m_sum / total_samples
-        
-        calibrated_flap_ref = float(expected_del_flap_m ** (1.0 / m_coef))
-        calibrated_edge_ref = float(expected_del_edge_m ** (1.0 / m_coef))
+        from .config import get_calibrated_del_refs
+        calibrated_flap_ref, calibrated_edge_ref = get_calibrated_del_refs(self.config)
         
         from .physics import DamageSolver
         new_ds_config = dataclasses.replace(
@@ -351,6 +334,10 @@ class OffshoreMaintenanceEnv(gym.Env):
 
         interval_damage = 0.0
         interval_damage_burden = 0.0
+        # Reporting-only records (never read by observations/reward/training):
+        # per-month farm power (MW, incl. HI<=0 availability) and calendar month for this interval.
+        self.interval_power_mw = []
+        self.interval_calendar_months = []
 
         terminated = False
         truncated = False
@@ -404,6 +391,8 @@ class OffshoreMaintenanceEnv(gym.Env):
             self.u_eff = u_eff[:, -1]
             self.ti_eff = ti_eff[:, -1]
             self.power = stochastic_monthly_power
+            self.interval_power_mw.append(stochastic_monthly_power.copy())
+            self.interval_calendar_months.append(int(self.current_month))
 
             self.delta_damage = stochastic_monthly_damage
             interval_damage += np.sum(self.delta_damage)

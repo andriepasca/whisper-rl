@@ -11,7 +11,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from whisper_env.config import (
     TurbineConfig,
     DamageSolverConfig,
-    get_default_config
+    get_default_config,
+    make_fixed_damage_solver_config
 )
 from whisper_env.environment import OffshoreMaintenanceEnv
 from whisper_env.physics import DamageSolver
@@ -38,10 +39,8 @@ def main():
         turbine_config = TurbineConfig(**turbine_kwargs)
         
         # 3. Set up DamageSolverConfig with the required values
-        damage_kwargs = {'design_life_years': 20.0}
-        if args.damage_csv:
-            damage_kwargs['csv_path'] = args.damage_csv
-        damage_solver_config = DamageSolverConfig(**damage_kwargs)
+        # Fixed shared DEL refs, identical to training/evaluation scripts.
+        damage_solver_config = make_fixed_damage_solver_config(args.damage_csv)
         damage_solver = DamageSolver(damage_solver_config)
         
         # 4. Replace solvers and update max_simulation_years (Frozen Dataclass mutability rule)
@@ -86,7 +85,7 @@ def main():
     plt.tight_layout()
     
     # Save plot
-    save_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'experiments', 'trajectory.png'))
+    save_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'plots', 'trajectory.png'))
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.savefig(save_path)
     print(f"Saved plot to {save_path}")

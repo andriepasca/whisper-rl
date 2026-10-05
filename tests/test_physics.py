@@ -6,7 +6,7 @@ import pandas as pd
 
 from whisper_env import (
     DamageSolverConfig, DamageSolver,
-    LayoutConfig, TurbineConfig, WindClimateConfig, WindClimate
+    WindClimateConfig, WindClimate
 )
 
 @pytest.fixture
@@ -43,18 +43,17 @@ def test_damage_solver_no_nans(mock_damage_csv):
 
 def test_sample_no_nans():
     weibull = {m: {"c": 8.0, "k": 2.0} for m in range(1, 13)}
-    wind_config = WindClimateConfig(
-        monthly_weibull=weibull,
-        wind_direction=np.arange(0, 360, 30),
-        wind_direction_probability=np.ones(12)/12
-    )
+    wind_config = WindClimateConfig(monthly_weibull=weibull)
     climate = WindClimate(wind_config)
 
     rng = np.random.default_rng(42)
 
-    # Check that stochastic sampling correctly generates valid arrays
+    # Check that stochastic sampling returns valid scalars (wind direction is not modeled)
     for _ in range(10):
-        u, wd = climate.sample(month=1, rng=rng)
+        u = climate.sample(month=1, rng=rng)
         assert not np.isnan(u)
-        assert not np.isnan(wd)
         assert 3.0 <= u <= 25.0
+
+    arr = climate.sample(month=1, rng=rng, size=30)
+    assert arr.shape == (30,)
+    assert np.all((arr >= 3.0) & (arr <= 25.0))

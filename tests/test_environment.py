@@ -21,27 +21,11 @@ from whisper_env import (
     EnergySolver,
     WindClimate,
     TransitionModel,
-    ElectricityPriceModel,
     SpatialGroupingObjective,
     RewardModel,
     LoggingModel,
     RandomScatteredLayout,
 )
-
-@pytest.fixture
-def mock_turbine_csv():
-    fd, path = tempfile.mkstemp(suffix='.csv')
-    df = pd.DataFrame({
-        "Wind speed [m/s]": np.linspace(3, 25, 23),
-        "Power [kW]": np.linspace(0, 5000, 23),
-        "Thrust coefficient [-]": np.linspace(0.1, 0.8, 23),
-        "Cp": np.linspace(0.2, 0.4, 23),
-        "Ct": np.linspace(0.1, 0.8, 23)
-    })
-    df.to_csv(path, index=False)
-    yield path
-    os.close(fd)
-    os.remove(path)
 
 @pytest.fixture
 def mock_damage_csv():
@@ -62,7 +46,7 @@ def mock_damage_csv():
     os.remove(path)
 
 @pytest.fixture
-def env_config(mock_turbine_csv, mock_damage_csv):
+def env_config(mock_damage_csv):
     layout = RandomScatteredLayout(n_turbines=4, seed=42)
     layout_config = LayoutConfig(x=layout.x, y=layout.y)
 
@@ -70,7 +54,6 @@ def env_config(mock_turbine_csv, mock_damage_csv):
         name="TestTurbine",
         rotor_diameter=120.0,
         hub_height=90.0,
-        csv_path=mock_turbine_csv
     )
 
     damage_config = DamageSolverConfig(csv_path=mock_damage_csv)
@@ -80,8 +63,6 @@ def env_config(mock_turbine_csv, mock_damage_csv):
     weibull = {m: {"c": 8.0, "k": 2.0} for m in range(1, 13)}
     wind_config = WindClimateConfig(
         monthly_weibull=weibull,
-        wind_direction=np.arange(0, 360, 30),
-        wind_direction_probability=np.ones(12)/12
     )
     wind_climate = WindClimate(wind_config)
 
@@ -89,7 +70,7 @@ def env_config(mock_turbine_csv, mock_damage_csv):
         maintenance_types=(
             MaintenanceType(
                 name="repair", threshold=0.8, downtime_hours=24,
-                carbon_emission=1000, damage_multiplier=0.7, duration_months=12
+                damage_multiplier=0.7, duration_months=12
             ),
         )
     )
@@ -101,6 +82,7 @@ def env_config(mock_turbine_csv, mock_damage_csv):
         def solve(self, metrics): return whisper_env.RewardResult(reward=0.0, objectives=metrics)
 
     class DummySpatialGrouping:
+        n_turbines = layout_config.x.shape[0]
         def solve(self, indices): return 0.0
 
     config = EnvironmentConfig(
