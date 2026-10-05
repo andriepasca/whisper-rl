@@ -5,6 +5,7 @@ import torch
 import dataclasses
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, CallbackList
 from whisper_env import (
     get_default_config, 
     OffshoreMaintenanceEnv,
@@ -70,6 +71,33 @@ def train_pareto_agents(args):
         env.action_space.seed(args.seed)
         env.observation_space.seed(args.seed)
 
+        # Configure CheckpointCallback and optional EvalCallback
+        checkpoint_dir = os.path.join("models", "checkpoints", f"w_{w}")
+        os.makedirs(checkpoint_dir, exist_ok=True)
+
+        callbacks = []
+        if args.save_freq > 0:
+            checkpoint_callback = CheckpointCallback(
+                save_freq=args.save_freq,
+                save_path=checkpoint_dir,
+                name_prefix=f"ppo_blade_w_{w}"
+            )
+            callbacks.append(checkpoint_callback)
+
+        if args.eval_freq > 0:
+            eval_env = OffshoreMaintenanceEnv(config)
+            eval_env = FlattenDictWrapper(eval_env)
+            eval_callback = EvalCallback(
+                eval_env,
+                best_model_save_path=os.path.join(checkpoint_dir, "best_model"),
+                log_path=os.path.join(checkpoint_dir, "eval_logs"),
+                eval_freq=args.eval_freq,
+                deterministic=True
+            )
+            callbacks.append(eval_callback)
+
+        callback_list = CallbackList(callbacks) if callbacks else None
+
         model = PPO(
             "MultiInputPolicy",
             env,
@@ -79,11 +107,17 @@ def train_pareto_agents(args):
             verbose=1,
             tensorboard_log="./logs/tensorboard/"
         )
-        model.learn(total_timesteps=args.timesteps, progress_bar=True)
+        model.learn(total_timesteps=args.timesteps, callback=callback_list, progress_bar=True)
 
-        model_path = os.path.join("models", f"ppo_blade_w{w}_seed{args.seed}.zip")
-        model.save(model_path)
-        print(f"Saved model to {model_path}")
+        # Save final model for 100% backward compatibility
+        model_path_seeded = os.path.join("models", f"ppo_blade_w{w}_seed{args.seed}.zip")
+        model_path_w = os.path.join("models", f"ppo_blade_w_{w}.zip")
+        model_path_unseeded = os.path.join("models", f"ppo_blade_w{w}.zip")
+
+        model.save(model_path_seeded)
+        model.save(model_path_w)
+        model.save(model_path_unseeded)
+        print(f"Saved final model to {model_path_seeded} and {model_path_w}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train PPO agents for different Pareto weights")
@@ -93,6 +127,8 @@ if __name__ == "__main__":
     parser.add_argument("--n_steps", type=int, default=2048, help="Number of steps to run for each environment per update")
     parser.add_argument("--damage-csv", type=str, default=os.path.join(DEFAULT_DATA_DIR, 'response_surface.csv'), help="Path to the response surface damage data")
     parser.add_argument("--weights", type=float, nargs='+', default=[0.0, 0.2, 0.5, 0.8, 1.0], help="List of scalarization weights w_damage to train")
+    parser.add_argument("--save-freq", type=int, default=50000, help="Save model checkpoint every N timesteps per weight")
+    parser.add_argument("--eval-freq", type=int, default=0, help="Frequency of evaluation in timesteps (0 to disable)")
     args = parser.parse_args()
 
     train_pareto_agents(args)
