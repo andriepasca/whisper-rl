@@ -19,7 +19,7 @@ where $w_{\text{damage}} \in [0.0, 1.0]$ controls the relative weighting between
 ## Key Methodology & Physics Architecture
 
 ### 1. High-Performance Surrogate Physics Model
-- **OpenFAST / FAST Response Surface**: Structural fatigue damage calculation is powered by an OpenFAST aero-servo-elastic response surface (`data/response_surface_200.csv`).
+- **OpenFAST / FAST Response Surface**: Structural fatigue damage calculation is powered by an OpenFAST aero-servo-elastic response surface (`data/response_surface.csv`).
 - **$\mathcal{O}(1)$ Grid Lookup**: Computes Damage Equivalent Loads (DEL) for flapwise ($DEL_{\text{flap}}$) and edgewise ($DEL_{\text{edge}}$) bending moments across effective wind speed ($u$) and turbulence intensity ($TI$) using $\mathcal{O}(1)$ `np.searchsorted` grid index lookup.
 - **Palmgren-Miner Linear Damage Accumulation**: Accumulates non-linear composite fatigue using S-N curve inverse slope ($m=10$).
 
@@ -28,7 +28,7 @@ where $w_{\text{damage}} \in [0.0, 1.0]$ controls the relative weighting between
 - **Zero-Overhead Caching**: Handled via thread-safe once-only lazy caching (`get_calibrated_del_refs` & `make_fixed_damage_solver_config` in `whisper_env/config.py`). This guarantees zero runtime training overhead while maintaining exact physical $DEL_{\text{ref}}$ precision.
 
 ### 3. Helix Time Progress Ratio
-- **End-of-Life Exploit Mitigation**: Observation space includes a temporal Z-axis progress ratio ($\text{progress\_ratio} = t / T_{\text{max}} \in [0, 1]$).
+- **End-of-Life Exploit Mitigation**: Observation space includes a temporal Z-axis progress ratio (`progress_ratio` $= t / T_{\text{max}} \in [0, 1]$).
 - **Finite-Horizon Boundary**: Adding temporal awareness prevents the finite-horizon end-of-life maintenance waste exploit, where un-informed policies over-invest in maintenance interventions near the episode boundary.
 
 ### 4. Base Mobilization Penalty
@@ -152,7 +152,7 @@ whisper-rl/
 │   ├── ppo_blade_w0.8_seed42.zip
 │   └── ppo_blade_w1.0_seed42.zip
 ├── data/                          # Aero-servo-elastic surrogate dataset
-│   └── response_surface_200.csv
+│   └── response_surface.csv
 ├── logs/                          # TensorBoard training logs
 ├── tests/                         # Pytest unit and integration test suite
 ├── pyproject.toml                 # Dependencies and build configuration
