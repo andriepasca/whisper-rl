@@ -128,3 +128,33 @@ def test_environment_multiple_steps(env_config):
         obs, reward, terminated, truncated, info = env.step(action)
         assert not np.any(np.isnan(env.delta_damage))
         assert not np.any(np.isnan(env.power))
+
+
+def test_spatial_grouping_objective_scale_invariance():
+    layout = RandomScatteredLayout(n_turbines=4, seed=42)
+
+    # 1. Default LayoutConfig: 7D spacing (882m) with default kappa = 1.0 -> base_penalty = 882.0m
+    layout_config_default = LayoutConfig(x=layout.x, y=layout.y)
+    obj_default = SpatialGroupingObjective(layout_config_default)
+    assert obj_default.base_penalty == 882.0
+    assert obj_default.solve([0]) == 882.0
+
+    # 2. 7D spacing (882m) with kappa = 0.5 -> base_penalty = 441.0m
+    layout_config_kappa_05 = LayoutConfig(x=layout.x, y=layout.y, kappa=0.5)
+    obj_05 = SpatialGroupingObjective(layout_config_kappa_05)
+    assert obj_05.base_penalty == 441.0
+    assert obj_05.solve([0]) == 441.0
+
+    # 3. Explicit min_spacing and kappa override in constructor
+    obj_custom = SpatialGroupingObjective(layout_config_default, min_spacing=500.0, kappa=3.0)
+    assert obj_custom.base_penalty == 1500.0
+    assert obj_custom.solve([0]) == 1500.0
+
+    # 4. Explicit 1D spacing = 126m, kappa = 2.0 -> base_penalty = 252.0m
+    layout_config_1d = LayoutConfig(x=layout.x, y=layout.y, min_spacing=126.0, kappa=2.0)
+    obj_1d = SpatialGroupingObjective(layout_config_1d)
+    assert obj_1d.base_penalty == 252.0
+    assert obj_1d.solve([0]) == 252.0
+
+    # 5. Empty indices check
+    assert obj_default.solve([]) == 0.0

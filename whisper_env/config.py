@@ -44,6 +44,20 @@ class LayoutConfig:
     """
     x: np.ndarray = field(default_factory=lambda: np.array(_get_default_layout().x))
     y: np.ndarray = field(default_factory=lambda: np.array(_get_default_layout().y))
+    min_spacing_D: float = 7.0
+    D: float = 126.0
+    min_spacing: Optional[float] = None
+    turbine_spacing: Optional[float] = None
+    kappa: float = 1.0
+
+    def __post_init__(self):
+        if self.min_spacing is None:
+            if self.turbine_spacing is not None:
+                self.min_spacing = float(self.turbine_spacing)
+            else:
+                self.min_spacing = float(self.min_spacing_D * self.D)
+        if self.turbine_spacing is None:
+            self.turbine_spacing = float(self.min_spacing)
 
 import os
 import threading
@@ -377,7 +391,17 @@ def get_default_config(
     layout = RandomScatteredLayout(
         D=126.0, n_turbines=n_turbines, min_spacing_D=7.0, farm_scale=1.0, seed=seed
     )
-    layout_config = LayoutConfig(x=np.array(layout.x), y=np.array(layout.y))
+    kappa = kwargs.get("kappa", 1.0)
+    min_spacing = kwargs.get("min_spacing", kwargs.get("turbine_spacing", layout.min_spacing))
+    layout_config = LayoutConfig(
+        x=np.array(layout.x),
+        y=np.array(layout.y),
+        min_spacing_D=7.0,
+        D=126.0,
+        min_spacing=min_spacing,
+        turbine_spacing=min_spacing,
+        kappa=kappa,
+    )
 
     # 2. Path Eradication
     damage_csv = os.path.join(data_dir, "response_surface.csv")

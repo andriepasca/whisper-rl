@@ -200,18 +200,26 @@ class SpatialGroupingObjective:
     often desirable to minimize vessel routing and logistical costs.
     """
 
-    def __init__(self, layout_config=None):
+    def __init__(
+        self,
+        layout_config=None,
+        min_spacing: Optional[float] = None,
+        turbine_spacing: Optional[float] = None,
+        kappa: Optional[float] = None,
+    ):
         """
         Initializes the spatial grouping objective.
 
         Args:
             layout_config (Optional[LayoutConfig]): The wind farm layout configuration.
+            min_spacing (Optional[float]): Inter-turbine spacing scale in meters (e.g. 882.0 for 7D spacing).
+            turbine_spacing (Optional[float]): Alias for min_spacing.
+            kappa (Optional[float]): Base mobilization penalty multiplier (default 1.0).
+                If None, extracted from layout_config or default 1.0.
         """
         if layout_config is None:
             from .config import LayoutConfig
             layout_config = LayoutConfig()
-
-        self.D = getattr(layout_config, "D", 126.0)
 
         self.x = np.asarray(layout_config.x, dtype=float)
         self.y = np.asarray(layout_config.y, dtype=float)
@@ -222,6 +230,33 @@ class SpatialGroupingObjective:
             )
 
         self.n_turbines = len(self.x)
+
+        if min_spacing is not None:
+            self.min_spacing = float(min_spacing)
+        elif turbine_spacing is not None:
+            self.min_spacing = float(turbine_spacing)
+        else:
+            self.min_spacing = float(
+                getattr(
+                    layout_config,
+                    "min_spacing",
+                    getattr(
+                        layout_config,
+                        "turbine_spacing",
+                        getattr(layout_config, "min_spacing_D", 7.0) * getattr(layout_config, "D", 126.0)
+                    )
+                )
+            )
+
+        self.turbine_spacing = self.min_spacing
+
+        if kappa is not None:
+            self.kappa = float(kappa)
+        else:
+            self.kappa = float(getattr(layout_config, "kappa", 1.0))
+
+        self.base_penalty = float(self.kappa * self.min_spacing)
+        self.D = float(getattr(layout_config, "D", 126.0))
 
         dx = self.x[:, None] - self.x[None, :]
         dy = self.y[:, None] - self.y[None, :]
@@ -264,7 +299,7 @@ class SpatialGroupingObjective:
                 "maintenance_indices must contain unique turbine indices."
             )
 
-        base_distance = self.D * 2.0
+        base_distance = self.base_penalty
 
         if len(indices) == 1:
             return float(base_distance)
