@@ -91,7 +91,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42, help="Random seed for training")
     parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate for PPO")
     parser.add_argument("--n_steps", type=int, default=2048, help="Number of steps to run for each environment per update")
-    parser.add_argument("--damage-csv", type=str, default=os.path.join(DEFAULT_DATA_DIR, 'response_surface_200.csv'), help="Path to the response surface damage data")
+    parser.add_argument("--damage-csv", type=str, default=os.path.join(DEFAULT_DATA_DIR, 'response_surface.csv'), help="Path to the response surface damage data")
     parser.add_argument("--weights", type=float, nargs='+', default=[0.0, 0.2, 0.5, 0.8, 1.0], help="List of scalarization weights w_damage to train")
     args = parser.parse_args()
 

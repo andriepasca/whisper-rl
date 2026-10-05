@@ -145,7 +145,7 @@ def main():
     parser.add_argument("--seed", type=int, default=2026, help="Random seed for the simulation.")
     parser.add_argument("--w-damage", type=float, default=0.85, help="Weight for the damage burden objective.")
     parser.add_argument("--w-spatial", type=float, default=0.15, help="Weight for the spatial grouping objective.")
-    parser.add_argument("--damage-csv", type=str, default=os.path.join(DEFAULT_DATA_DIR, "response_surface_200.csv"), help="Path to damage response CSV.")
+    parser.add_argument("--damage-csv", type=str, default=os.path.join(DEFAULT_DATA_DIR, "response_surface.csv"), help="Path to damage response CSV.")
     parser.add_argument("--allow-dummy", action="store_true", help="Use a random DummyAgent if the PPO model is missing (loud warning).")
     parser.add_argument("--downtime-costs-energy", action="store_true", help="Post-hoc only: subtract maintenance downtime_hours from first-month energy of the interval. Default off, matching the env, which does not reduce power for maintenance downtime.")
     parser.add_argument("--vessel-carbon-factor", type=float, default=0.05, help="Post-hoc only: vessel carbon intensity factor in kg CO2 per meter of spatial mobilization distance.")

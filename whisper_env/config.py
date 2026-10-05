@@ -70,7 +70,7 @@ class DamageSolverConfig:
     """
     Configuration for the DamageSolver response surfaces and fatigue calculations.
     """
-    csv_path: str = os.path.join(DEFAULT_DATA_DIR, "response_surface_200.csv")
+    csv_path: str = os.path.join(DEFAULT_DATA_DIR, "response_surface.csv")
     u_column: str = "u"
     ti_column: str = "ti"
     del_flap_column: str = "del_flap"
@@ -380,7 +380,7 @@ def get_default_config(
     layout_config = LayoutConfig(x=np.array(layout.x), y=np.array(layout.y))
 
     # 2. Path Eradication
-    damage_csv = os.path.join(data_dir, "response_surface_200.csv")
+    damage_csv = os.path.join(data_dir, "response_surface.csv")
 
     turbine_config = TurbineConfig()
 

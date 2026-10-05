@@ -186,7 +186,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Benchmark Pareto agents")
     parser.add_argument("--seed", type=int, default=42, help="Base random seed; episode i resets with seed+i (default: 42)")
     parser.add_argument("--n-episodes", type=int, default=20, help="Episodes per agent (default: 20)")
-    parser.add_argument("--damage-csv", type=str, default=os.path.join(DEFAULT_DATA_DIR, 'response_surface_200.csv'), help="Path to the response surface damage data")
+    parser.add_argument("--damage-csv", type=str, default=os.path.join(DEFAULT_DATA_DIR, 'response_surface.csv'), help="Path to the response surface damage data")
     parser.add_argument("--allow-dummy", action="store_true", help="Use a random DummyAgent when a model zip is missing (loud warning)")
     parser.add_argument("--weights", type=float, nargs='+', default=[0.0, 0.2, 0.5, 0.8, 1.0], help="List of scalarization weights w_damage to benchmark")
     parser.add_argument("--output-csv", type=str, default=os.path.join("results", "pareto_benchmark_results.csv"), help="Output CSV path (default: results/pareto_benchmark_results.csv)")

@@ -103,7 +103,7 @@ def main():
     p.add_argument("--design-life", type=float, default=20.0)
     p.add_argument("--tol", type=float, default=0.10, help="Relative tolerance on median lifetime.")
     p.add_argument("--calib-seed", type=int, default=42)
-    p.add_argument("--damage-csv", type=str, default=os.path.join(DEFAULT_DATA_DIR, "response_surface_200.csv"))
+    p.add_argument("--damage-csv", type=str, default=os.path.join(DEFAULT_DATA_DIR, "response_surface.csv"))
     p.add_argument("--out", type=str, default="lifetime_check.csv")
     args = p.parse_args()
 
